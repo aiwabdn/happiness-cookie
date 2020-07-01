@@ -17,34 +17,55 @@ class Neuron():
                  side_info_dim=784,
                  context_dim=4,
                  mu=0.0,
-                 std=0.1):
+                 std=0.1,
+                 epsilon=0.01,
+                 beta=5):
+        # context function for halfspace gating
         self.v = np.random.normal(loc=mu,
                                   scale=std,
-                                  size=(side_info_dim, context_dim))
-        self.v = self.v / np.linalg.norm(self.v, ord=2, axis=0, keepdims=True)
+                                  size=(context_dim, side_info_dim))
+        # scale by norm
+        self.v = self.v / np.linalg.norm(self.v, ord=2, axis=1, keepdims=True)
+        # constant values for halfspace gating
         self.b = np.random.normal(size=(context_dim, 1))
-        self.weights = np.ones(shape=(input_dim,
-                                      2**context_dim)) * (1 / input_dim)
+        # weights for the neuron
+        self.weights = np.ones(shape=(2**context_dim,
+                                      input_dim)) * (1 / input_dim)
+        # array to convert binary context to index
         self.boolean_converter = np.array([[2**i] for i in range(context_dim)])
+        # clip values
+        self.epsilon = epsilon
+        self.beta = beta
 
     def forward(self, logit_previous, side_information):
-        projection = self.v.T.dot(side_information)
+        # project side information and determine context index
+        projection = self.v.dot(side_information)
         if projection.ndim == 1:
             projection = projection.reshape(-1, 1)
-        self.current_contexts = self.boolean_converter.T.dot(
-            (projection > self.b).astype(np.int)).flatten()
-        self.current_selected_weights = self.weights[:, self.current_contexts]
-        self.output_logits = np.multiply(self.current_selected_weights,
-                                         logit_previous).sum(axis=0)
+        binary = (projection > self.b).astype(np.int)
+        self.current_contexts = np.squeeze(
+            np.sum(binary * self.boolean_converter, axis=0))
+
+        # select weights for current batch
+        self.current_selected_weights = self.weights[self.current_contexts, :]
+        # compute logit output
+        self.output_logits = self.current_selected_weights.dot(
+            logit_previous).diagonal()
         self.logit_previous = logit_previous
         return self.output_logits
 
     def update(self, targets, learning_rate=0.001):
-        sigmoids = sigmoid(self.output_logits)
+        # compute output and clip
+        sigmoids = np.clip(sigmoid(self.output_logits), self.epsilon,
+                           1 - self.epsilon)
+        # compute update
         update_value = learning_rate * (sigmoids -
                                         targets) * self.logit_previous
+        # iterate through selected contexts and update
         for i in range(update_value.shape[-1]):
-            self.weights[:, self.current_contexts[i]] -= update_value[:, i]
+            self.weights[self.current_contexts[i], :] -= update_value[:, i]
+        # clip weights
+        self.weights = np.clip(self.weights, -self.beta, self.beta)
 
 
 class Layer():
@@ -52,11 +73,14 @@ class Layer():
                  num_neurons=128,
                  input_dim=128,
                  side_info_dim=128,
-                 epsilon=0.05):
+                 epsilon=0.01,
+                 beta=5):
+        # create num_neurons - 1 neurons for the layer
         self.neurons = [
-            Neuron(input_dim, side_info_dim)
+            Neuron(input_dim, side_info_dim, epsilon=epsilon, beta=beta)
             for _ in range(max(1, num_neurons - 1))
         ]
+        # constant bias for the layer
         self.bias = np.random.uniform(epsilon, 1 - epsilon)
 
     def forward(self, logit_previous, side_information):
@@ -65,6 +89,7 @@ class Layer():
             # no bias for the output neuron
             output_logits.append(np.repeat(self.bias,
                                            logit_previous.shape[-1]))
+        # collect outputs from all neurons
         for n in self.neurons:
             output_logits.append(n.forward(logit_previous, side_information))
         output = np.vstack(output_logits)
@@ -84,7 +109,7 @@ class LayerVec():
                  mu=0.0,
                  std=0.1,
                  epsilon=0.05,
-                 beta=1.5):
+                 beta=5):
 
         self.num_neurons = num_neurons
         # constant bias for the layer
@@ -94,6 +119,7 @@ class LayerVec():
                                   scale=std,
                                   size=(num_neurons, context_dim,
                                         side_info_dim))
+        # scale by norm
         self.v /= np.linalg.norm(self.v, axis=2, keepdims=True)
         # constant values for halfspace gating
         self.b = np.random.normal(loc=mu,
@@ -134,15 +160,18 @@ class LayerVec():
             # done for ease of computation
             self.output_logits[0] = self.bias
 
-        # save the previous layer's output
+        # save previous layer's output
         self.logit_previous = logit_previous
         return self.output_logits
 
     def update(self, targets, learning_rate=0.001):
+        # compute sigmoid of output and clip
         sigmoids = np.clip(sigmoid(self.output_logits), self.epsilon,
                            1 - self.epsilon)
+        # compute update
         update_values = learning_rate * np.expand_dims(
             (sigmoids - targets), axis=1) * self.logit_previous
+        # update selected weights and clip
         self.weights[np.arange(self.num_neurons).reshape(-1, 1), self.
                      current_contexts, :] = np.clip(
                          self.weights[np.arange(self.num_neurons).
@@ -188,3 +217,6 @@ class Model():
 if __name__ == '__main__':
     m = Model(layers=[128, 128, 1])
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=8, mnist_class=3)
+    print('Accuracy:', acc)
+    print('Confusion matrix:\n', conf_mat)
+    print('Prec-Rec-F:\n', prfs)
