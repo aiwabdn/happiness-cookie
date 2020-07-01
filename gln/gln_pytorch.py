@@ -13,8 +13,8 @@ else:
 
 
 def data_transform(X, y):
-    return torch.as_tensor(X, dtype=torch.float32).to(DEVICE), torch.as_tensor(
-        y, dtype=torch.float32).to(DEVICE)
+    return torch.as_tensor(X, dtype=torch.float64).to(DEVICE), torch.as_tensor(
+        y, dtype=torch.float64).to(DEVICE)
 
 
 def result_transform(output):
@@ -32,9 +32,10 @@ class Neuron(nn.Module):
                  beta=5):
         super(Neuron, self).__init__()
         # context function for halfspace gating
-        self.v = nn.Parameter(torch.normal(mean=mu,
-                                           std=std,
-                                           size=(context_dim, side_info_dim)),
+        self.v = nn.Parameter(torch.as_tensor(
+            np.random.normal(loc=mu,
+                             scale=std,
+                             size=(context_dim, side_info_dim))),
                               requires_grad=False)
         # scale by norm
         self.v /= torch.norm(self.v, dim=1, keepdim=True)
@@ -45,7 +46,8 @@ class Neuron(nn.Module):
                               requires_grad=False)
         # weights for the neuron
         self.weights = nn.Parameter(
-            torch.ones(size=(2**context_dim, input_dim)) * (1 / input_dim),
+            torch.ones(size=(2**context_dim, input_dim), dtype=torch.float64) *
+            (1 / input_dim),
             requires_grad=False)
         # array to convert binary context to index
         self.boolean_converter = nn.Parameter(torch.as_tensor(
@@ -64,7 +66,7 @@ class Neuron(nn.Module):
         # self.current_contexts = torch.matmul(self.boolean_converter.T,
         #                                      binary).flatten().long()
         self.current_contexts = torch.squeeze(
-            torch.sum(binary * self.boolean_converter, dim=0))
+            torch.sum(binary * self.boolean_converter, dim=0)).long()
 
         # select weights for current batch
         self.current_selected_weights = self.weights[self.current_contexts, :]
@@ -84,7 +86,7 @@ class Neuron(nn.Module):
         # iterate through selected contexts and update
         for i in range(update_value.shape[-1]):
             self.weights[self.current_contexts[i], :] = torch.clamp(
-                self.weight[self.current_contexts[i], :] - update_value[:, i],
+                self.weights[self.current_contexts[i], :] - update_value[:, i],
                 -self.beta, self.beta)
 
     def extra_repr(self):
@@ -105,17 +107,15 @@ class Layer(nn.Module):
             for i in range(max(1, num_neurons - 1))
         ])
         # constant bias for the layer
-        self.bias = nn.Parameter(torch.as_tensor(
-            np.random.uniform(epsilon, 1 - epsilon)),
-                                 requires_grad=False)
+        self.bias = np.random.uniform(epsilon, 1 - epsilon)
 
     def forward(self, logit_previous, side_information):
         output_logits = []
         if len(self.neurons) > 1:
             # no bias for the output neuron
             output_logits.append(
-                torch.repeat_interleave(self.bias,
-                                        logit_previous.size(-1)).to(DEVICE))
+                (torch.ones(logit_previous.size(-1), dtype=torch.float64) *
+                 self.bias).to(DEVICE))
 
         # collect outputs from all neurons
         for n in self.neurons:
@@ -269,11 +269,11 @@ class Model(nn.Module):
 # %%
 if __name__ == '__main__':
     m = Model([128, 128, 128, 1]).to(DEVICE)
-    acc, conf, prfs = get_mnist_metrics(m,
-                                        mnist_class=9,
-                                        batch_size=16,
-                                        data_transform=data_transform,
-                                        result_transform=result_transform)
+    acc, conf_mat, prfs = get_mnist_metrics(m,
+                                            mnist_class=3,
+                                            batch_size=32,
+                                            data_transform=data_transform,
+                                            result_transform=result_transform)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)

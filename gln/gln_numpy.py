@@ -186,14 +186,14 @@ class Model():
         for idx, num_neurons in enumerate(layers):
             if idx == 0:
                 # process base layer outputs
-                layer = Layer(num_neurons=num_neurons,
-                              input_dim=side_info_dim,
-                              side_info_dim=side_info_dim)
+                layer = LayerVec(num_neurons=num_neurons,
+                                 input_dim=side_info_dim,
+                                 side_info_dim=side_info_dim)
             else:
                 # process inner layer outputs
-                layer = Layer(num_neurons=num_neurons,
-                              input_dim=layers[idx - 1],
-                              side_info_dim=side_info_dim)
+                layer = LayerVec(num_neurons=num_neurons,
+                                 input_dim=layers[idx - 1],
+                                 side_info_dim=side_info_dim)
             self.layers.append(layer)
         # squash inputs in base layer as suggested in paper
         self.base_layer = lambda x: (x * (1 - 2 * epsilon)) + epsilon
