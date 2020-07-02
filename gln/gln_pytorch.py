@@ -2,7 +2,6 @@
 import numpy as np
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from test_mnist import get_mnist_metrics
 
@@ -78,7 +77,7 @@ class Neuron(nn.Module):
 
     def update(self, targets, learning_rate=0.001):
         # compute output and clip
-        sigmoids = torch.clamp(F.sigmoid(self.output_logits), self.epsilon,
+        sigmoids = torch.clamp(torch.sigmoid(self.output_logits), self.epsilon,
                                1 - self.epsilon)
         # compute update
         update_value = learning_rate * (sigmoids -
@@ -204,7 +203,7 @@ class LayerVec(nn.Module):
 
     def update(self, targets, learning_rate=0.001):
         # compute sigmoid of output and clip
-        sigmoids = torch.clamp(F.sigmoid(self.output_logits), self.epsilon,
+        sigmoids = torch.clamp(torch.sigmoid(self.output_logits), self.epsilon,
                                1 - self.epsilon)
         # compute update
         update_values = learning_rate * torch.unsqueeze(
@@ -259,7 +258,7 @@ class Model(nn.Module):
         out = self.base_layer(inputs)
         for l in self.layers:
             out = l.forward(out, inputs)
-        return F.sigmoid(out)
+        return torch.sigmoid(out)
 
     def update(self, targets):
         for l in self.layers:
