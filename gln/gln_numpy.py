@@ -1,222 +1,247 @@
 # %%
+from typing import Sequence
 import numpy as np
 
-from test_mnist import get_mnist_metrics
 
-np.set_printoptions(precision=4, suppress=True)
+class OnlineUpdateModule(object):
+    def __init__(self, learning_rate: float, pred_clipping: float,
+                 weight_clipping: float):
+        self.learning_rate = learning_rate
+        self.weight_clipping = weight_clipping
+
+    def predict(self, preds, input, target=None):
+        raise NotImplementedError()
 
 
-# %%
 def sigmoid(X):
     return 1 / (1 + np.exp(-X))
 
 
-class Neuron():
+class Neuron(OnlineUpdateModule):
     def __init__(self,
-                 input_dim=128,
-                 side_info_dim=784,
-                 context_dim=4,
-                 mu=0.0,
-                 std=0.1,
-                 epsilon=0.01,
-                 beta=5):
-        # context function for halfspace gating
-        self.v = np.random.normal(loc=mu,
-                                  scale=std,
-                                  size=(context_dim, side_info_dim))
-        # scale by norm
-        self.v = self.v / np.linalg.norm(self.v, ord=2, axis=1, keepdims=True)
-        # constant values for halfspace gating
-        self.b = np.random.normal(size=(context_dim, 1))
-        # weights for the neuron
-        self.weights = np.ones(shape=(2**context_dim,
-                                      input_dim)) * (1 / input_dim)
-        # array to convert binary context to index
-        self.boolean_converter = np.array([[2**i] for i in range(context_dim)])
-        # clip values
-        self.epsilon = epsilon
-        self.beta = beta
+                 input_size: int,
+                 context_size: int,
+                 context_map_size: int = 4,
+                 output_clipping: float = 0.01,
+                 weight_clipping: float = 5,
+                 mu: float = 0.0,
+                 std: float = 0.1,
+                 learning_rate: float = 0.01):
+        self._projection = np.random.normal(loc=mu,
+                                            scale=std,
+                                            size=(context_map_size,
+                                                  context_size))
+        self._projection /= np.linalg.norm(self._projection,
+                                           ord=2,
+                                           axis=1,
+                                           keepdims=True)
+        self._projection_bias = np.random.normal(loc=mu,
+                                                 scale=std,
+                                                 size=(context_map_size, 1))
+        self._weights = np.ones(shape=(2**context_map_size,
+                                       input_size)) * (1 / input_size)
+        self._boolean_converter = np.array([[2**i]
+                                            for i in range(context_map_size)])
+        self._output_clipping = output_clipping
+        self._weight_clipping = weight_clipping
+        self.learning_rate = learning_rate
 
-    def forward(self, logit_previous, side_information):
-        # project side information and determine context index
-        projection = self.v.dot(side_information)
-        if projection.ndim == 1:
-            projection = projection.reshape(-1, 1)
-        binary = (projection > self.b).astype(np.int)
-        self.current_contexts = np.squeeze(
-            np.sum(binary * self.boolean_converter, axis=0))
+    def predict(self, logits, context_input, targets=None):
+        projected = self._projection.dot(context_input)
+        if projected.ndim == 1:
+            projected = projected.reshape(-1, 1)
 
-        # select weights for current batch
-        self.current_selected_weights = self.weights[self.current_contexts, :]
-        # compute logit output
-        self.output_logits = self.current_selected_weights.dot(
-            logit_previous).diagonal()
-        self.logit_previous = logit_previous
-        return self.output_logits
+        mapped_context_binary = (projected > self._projection_bias).astype(
+            np.int)
+        current_context_indices = np.squeeze(
+            np.sum(mapped_context_binary * self._boolean_converter, axis=0))
+        print(current_context_indices)
+        current_selected_weights = self._weights[current_context_indices, :]
 
-    def update(self, targets, learning_rate=0.001):
-        # compute output and clip
-        sigmoids = np.clip(sigmoid(self.output_logits), self.epsilon,
-                           1 - self.epsilon)
-        # compute update
-        update_value = learning_rate * (sigmoids -
-                                        targets) * self.logit_previous
-        # iterate through selected contexts and update
-        for i in range(update_value.shape[-1]):
-            self.weights[self.current_contexts[i], :] -= update_value[:, i]
-        # clip weights
-        self.weights = np.clip(self.weights, -self.beta, self.beta)
+        output_logits = current_selected_weights.dot(logits)
+        if output_logits.ndim > 1:
+            output_logits = output_logits.diagonal()
+
+        if targets is not None:
+            sigmoids = np.clip(sigmoid(output_logits), self._output_clipping,
+                               1 - self._output_clipping)
+            update_value = self.learning_rate * (sigmoids - targets) * logits
+
+            for idx, ci in enumerate(current_context_indices):
+                self._weights[ci, :] -= update_value[:, idx]
+
+        return output_logits
 
 
-class Layer():
+class CustomLinear(OnlineUpdateModule):
     def __init__(self,
-                 num_neurons=128,
-                 input_dim=128,
-                 side_info_dim=128,
-                 epsilon=0.01,
-                 beta=5):
-        # create num_neurons - 1 neurons for the layer
-        self.neurons = [
-            Neuron(input_dim, side_info_dim, epsilon=epsilon, beta=beta)
-            for _ in range(max(1, num_neurons - 1))
-        ]
-        # constant bias for the layer
-        self.bias = np.random.uniform(epsilon, 1 - epsilon)
+                 size: int,
+                 input_size: int,
+                 context_size: int,
+                 context_map_size: int,
+                 learning_rate: float,
+                 output_clipping: float = 0.01,
+                 weight_clipping: float = 5,
+                 bias: bool = True,
+                 mu: float = 0.0,
+                 std: float = 0.1):
+        super().__init__(learning_rate, weight_clipping)
 
-    def forward(self, logit_previous, side_information):
+        if size == 1:
+            bias = False
+
+        if bias:
+            self._neurons = [
+                Neuron(input_size, context_size, context_map_size,
+                       output_clipping, weight_clipping, mu, std)
+                for _ in range(max(1, size - 1))
+            ]
+            self._bias = np.random.uniform(output_clipping,
+                                           1 - output_clipping)
+        else:
+            self._neurons = [
+                Neuron(input_size, context_size, context_map_size,
+                       output_clipping, weight_clipping, mu, std)
+                for _ in range(size)
+            ]
+            self._bias = None
+
+    def predict(self, logits, context_input, targets=None):
         output_logits = []
-        if len(self.neurons) > 1:
-            # no bias for the output neuron
-            output_logits.append(np.repeat(self.bias,
-                                           logit_previous.shape[-1]))
-        # collect outputs from all neurons
-        for n in self.neurons:
-            output_logits.append(n.forward(logit_previous, side_information))
+
+        if self._bias:
+            output_logits.append(np.repeat(self._bias, logits.shape[-1]))
+
+        for n in self._neurons:
+            output_logits.append(n.predict(logits, context_input, targets))
+
         output = np.vstack(output_logits)
         return output
 
-    def update(self, targets, learning_rate=0.001):
-        for n in self.neurons:
-            n.update(targets)
 
-
-class LayerVec():
+class Linear(OnlineUpdateModule):
     def __init__(self,
-                 num_neurons=128,
-                 input_dim=128,
-                 side_info_dim=784,
-                 context_dim=4,
-                 mu=0.0,
-                 std=0.1,
-                 epsilon=0.05,
-                 beta=5):
+                 size: int,
+                 input_size: int,
+                 context_size: int,
+                 context_map_size: int = 4,
+                 learning_rate: float = 0.01,
+                 output_clipping: float = 0.01,
+                 weight_clipping: float = 5,
+                 bias: bool = True,
+                 mu: float = 0.0,
+                 std: float = 0.1):
+        # super(Linear, self).__init__(learning_rate, output_clipping, weight_clipping)
 
-        self.num_neurons = num_neurons
-        # constant bias for the layer
-        self.bias = np.random.uniform(epsilon, 1 - epsilon)
-        # context function for halfspace gating
-        self.v = np.random.normal(loc=mu,
-                                  scale=std,
-                                  size=(num_neurons, context_dim,
-                                        side_info_dim))
-        # scale by norm
-        self.v /= np.linalg.norm(self.v, axis=2, keepdims=True)
-        # constant values for halfspace gating
-        self.b = np.random.normal(loc=mu,
-                                  scale=std,
-                                  size=(num_neurons, context_dim, 1))
-        # array to convert binary context to index
-        self.boolean_converter = np.array([[2**i] for i in range(context_dim)])
-        # weights for the whole layer
-        self.weights = np.ones(
-            (num_neurons, 2**context_dim, input_dim)) * (1 / input_dim)
-        # clipping value for outputs of neurons
-        self.epsilon = epsilon
-        # clipping value for weights of layer
-        self.beta = beta
+        self.learning_rate = learning_rate
+        if size == 1:
+            bias = False
 
-    def forward(self, logit_previous, side_information):
-        # project side information and determine context index
-        projection = np.matmul(self.v, side_information)
-        binary = (projection > self.b).astype(np.int)
-        self.current_contexts = np.squeeze(
-            np.sum(binary * self.boolean_converter, axis=1))
+        if bias:
+            self._bias = np.random.uniform(output_clipping,
+                                           1 - output_clipping)
+        else:
+            self._bias = None
 
-        # select all contexts across all neurons in layer
-        self.current_selected_weights = self.weights[np.arange(
-            self.num_neurons).reshape(-1, 1), self.current_contexts, :]
+        self._projection = np.random.normal(loc=mu,
+                                            scale=std,
+                                            size=(size, context_map_size,
+                                                  context_size))
+        self._projection /= np.linalg.norm(self._projection,
+                                           axis=2,
+                                           keepdims=True)
+        self._projection_bias = np.random.normal(loc=mu,
+                                                 scale=std,
+                                                 size=(size, context_map_size,
+                                                       1))
+        self._boolean_converter = np.array(
+            [[2**i for i in range(context_map_size)]])
+        self._weights = np.ones(shape=(size, 2**context_map_size,
+                                       input_size)) * (1 / input_size)
+        self._output_clipping = output_clipping
+        self._weight_clipping = weight_clipping
+        self.size = size
 
-        # compute logit output
-        # matmul duplicates results, so take diagonal
-        self.output_logits = np.matmul(self.current_selected_weights,
-                                       logit_previous).diagonal(axis1=1,
-                                                                axis2=2)
+    def predict(self, logits, context_inputs, targets=None):
+        projected = np.matmul(self._projection, context_inputs)
+        mapped_context_binary = (projected > self._projection_bias).astype(
+            np.int)
+        current_context_indices = np.squeeze(
+            self._boolean_converter.dot(mapped_context_binary))
+        current_selected_weights = self._weights[np.arange(self.size).reshape(
+            -1, 1), current_context_indices, :]
 
-        # if not final output layer
-        if self.num_neurons > 1:
-            # make array writeable
-            self.output_logits.setflags(write=1)
-            # assign output of first neuron to bias
-            # done for ease of computation
-            self.output_logits[0] = self.bias
+        output_logits = np.matmul(current_selected_weights,
+                                  logits).diagonal(axis1=1, axis2=2)
 
-        # save previous layer's output
-        self.logit_previous = logit_previous
-        return self.output_logits
+        if self._bias is not None:
+            output_logits.setflags(write=1)
+            output_logits[0] = self._bias
 
-    def update(self, targets, learning_rate=0.001):
-        # compute sigmoid of output and clip
-        sigmoids = np.clip(sigmoid(self.output_logits), self.epsilon,
-                           1 - self.epsilon)
-        # compute update
-        update_values = learning_rate * np.expand_dims(
-            (sigmoids - targets), axis=1) * self.logit_previous
-        # update selected weights and clip
-        self.weights[np.arange(self.num_neurons).reshape(-1, 1), self.
-                     current_contexts, :] = np.clip(
-                         self.weights[np.arange(self.num_neurons).
-                                      reshape(-1, 1), self.current_contexts, :]
-                         - np.transpose(update_values,
-                                        (0, 2, 1)), -self.beta, self.beta)
+        if targets is not None:
+            sigmoids = np.clip(sigmoid(output_logits), self._output_clipping,
+                               1 - self._output_clipping)
+            update_value = self.learning_rate * np.expand_dims(
+                (sigmoids - targets), axis=1) * logits
+            self._weights[np.arange(self.size).reshape(
+                -1, 1), current_context_indices, :] = np.clip(
+                    self._weights[np.arange(self.size).
+                                  reshape(-1, 1), current_context_indices, :] -
+                    np.transpose(update_value, (0, 2, 1)),
+                    -self._weight_clipping, self._weight_clipping)
+
+        return output_logits
 
 
-class Model():
-    def __init__(self, layers=[4, 4, 1], side_info_dim=784, epsilon=0.01):
+def GLN(OnlineUpdateModule):
+    def __init__(self,
+                 layer_sizes: Sequence[int],
+                 input_size: int,
+                 context_size: int,
+                 context_map_size: int = 4,
+                 learning_rate: float = 1e-4,
+                 output_clipping: float = 0.05,
+                 weight_clipping: float = 5.0,
+                 classes: int = 2,
+                 base_preds_size: int = None):
+        super(GLN, self).__init__(learning_rate, output_clipping,
+                                  weight_clipping)
+
         self.layers = []
-        for idx, num_neurons in enumerate(layers):
+        for idx, size in enumerate(layer_sizes):
             if idx == 0:
-                # process base layer outputs
-                layer = LayerVec(num_neurons=num_neurons,
-                                 input_dim=side_info_dim,
-                                 side_info_dim=side_info_dim)
+                layer = CustomLinear(size, base_preds_size, context_size,
+                                     context_map_size, learning_rate,
+                                     output_clipping, weight_clipping)
             else:
-                # process inner layer outputs
-                layer = LayerVec(num_neurons=num_neurons,
-                                 input_dim=layers[idx - 1],
-                                 side_info_dim=side_info_dim)
+                layer = CustomLinear(size, layer_sizes[idx - 1], context_size,
+                                     context_map_size, learning_rate,
+                                     output_clipping, weight_clipping)
             self.layers.append(layer)
-        # squash inputs in base layer as suggested in paper
-        self.base_layer = lambda x: (x * (1 - 2 * epsilon)) + epsilon
-        self.learning_rate = 0.001
 
     def set_learning_rate(self, lr):
         self.learning_rate = lr
 
-    def forward(self, inputs):
-        out = self.base_layer(inputs)
+    def predict(self, base_predictions, context_input, targets=None):
+        out = base_predictions
         for l in self.layers:
-            out = l.forward(out, inputs)
-        return sigmoid(out)
+            out = l.predict(out, context_input, targets)
 
-    def update(self, targets):
-        for l in self.layers:
-            l.update(targets, self.learning_rate)
+        return sigmoid(out)
 
 
 # %%
+n = Neuron(4, 784, 4)
+c = np.random.normal(size=(784, 1))
+i = np.random.normal(size=(4, 1))
+t = np.array([0])
+n.predict(i, c, t)
+# %%
+from test_mnist import get_mnist_metrics
 if __name__ == '__main__':
-    m = Model(layers=[128, 128, 1])
+    m = GLN(layer_sizes=[4, 4, 1], input_size=784
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=8, mnist_class=3)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
+
