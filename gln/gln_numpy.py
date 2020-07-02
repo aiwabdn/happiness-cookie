@@ -1,23 +1,13 @@
-# %%
 from typing import Sequence
+
 import numpy as np
-
-
-class OnlineUpdateModule(object):
-    def __init__(self, learning_rate: float, pred_clipping: float,
-                 weight_clipping: float):
-        self.learning_rate = learning_rate
-        self.weight_clipping = weight_clipping
-
-    def predict(self, preds, input, target=None):
-        raise NotImplementedError()
 
 
 def sigmoid(X):
     return 1 / (1 + np.exp(-X))
 
 
-class Neuron(OnlineUpdateModule):
+class Neuron():
     def __init__(self,
                  input_size: int,
                  context_size: int,
@@ -53,9 +43,9 @@ class Neuron(OnlineUpdateModule):
 
         mapped_context_binary = (projected > self._projection_bias).astype(
             np.int)
-        current_context_indices = np.squeeze(
-            np.sum(mapped_context_binary * self._boolean_converter, axis=0))
-        print(current_context_indices)
+        current_context_indices = np.sum(mapped_context_binary *
+                                         self._boolean_converter,
+                                         axis=0)
         current_selected_weights = self._weights[current_context_indices, :]
 
         output_logits = current_selected_weights.dot(logits)
@@ -73,7 +63,7 @@ class Neuron(OnlineUpdateModule):
         return output_logits
 
 
-class CustomLinear(OnlineUpdateModule):
+class CustomLinear():
     def __init__(self,
                  size: int,
                  input_size: int,
@@ -85,7 +75,6 @@ class CustomLinear(OnlineUpdateModule):
                  bias: bool = True,
                  mu: float = 0.0,
                  std: float = 0.1):
-        super().__init__(learning_rate, weight_clipping)
 
         if size == 1:
             bias = False
@@ -119,7 +108,7 @@ class CustomLinear(OnlineUpdateModule):
         return output
 
 
-class Linear(OnlineUpdateModule):
+class Linear():
     def __init__(self,
                  size: int,
                  input_size: int,
@@ -131,7 +120,6 @@ class Linear(OnlineUpdateModule):
                  bias: bool = True,
                  mu: float = 0.0,
                  std: float = 0.1):
-        # super(Linear, self).__init__(learning_rate, output_clipping, weight_clipping)
 
         self.learning_rate = learning_rate
         if size == 1:
@@ -193,19 +181,17 @@ class Linear(OnlineUpdateModule):
         return output_logits
 
 
-def GLN(OnlineUpdateModule):
+class GLN():
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_size: int,
                  context_map_size: int = 4,
-                 learning_rate: float = 1e-4,
-                 output_clipping: float = 0.05,
+                 learning_rate: float = 1e-2,
+                 output_clipping: float = 0.01,
                  weight_clipping: float = 5.0,
                  classes: int = 2,
                  base_preds_size: int = None):
-        super(GLN, self).__init__(learning_rate, output_clipping,
-                                  weight_clipping)
 
         self.layers = []
         for idx, size in enumerate(layer_sizes):
@@ -231,10 +217,14 @@ def GLN(OnlineUpdateModule):
 
 
 # %%
-n = Neuron(4, 784, 4)
-c = np.random.normal(size=(784, 1))
-i = np.random.normal(size=(4, 1))
-t = np.array([0])
+n = GLN(layer_sizes=[4, 4, 1],
+        input_size=784,
+        context_size=784,
+        base_preds_size=784)
+c = np.random.normal(size=(784, 4))
+i = np.random.normal(size=(784, 4))
+t = np.array([0, 1, 1, 0])
+# %%
 n.predict(i, c, t)
 # %%
 from test_mnist import get_mnist_metrics
@@ -244,4 +234,3 @@ if __name__ == '__main__':
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
-
