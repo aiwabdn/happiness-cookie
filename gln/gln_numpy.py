@@ -2,9 +2,10 @@
 from typing import Sequence, Optional, Callable
 
 import numpy as np
+from scipy.special import logit
 
 
-def sigmoid(X):
+def sigmoid(X: np.ndarray):
     return 1 / (1 + np.exp(-X))
 
 
@@ -13,7 +14,7 @@ class Neuron():
                  input_size: int,
                  context_size: int,
                  context_map_size: int = 4,
-                 output_clipping: float = 0.01,
+                 pred_clipping: float = 0.01,
                  weight_clipping: float = 5,
                  learning_rate: float = 0.01):
         self._context_maps = np.random.normal(size=(context_map_size,
@@ -27,7 +28,7 @@ class Neuron():
                                        input_size)) * (1 / input_size)
         self._boolean_converter = np.array([[2**i]
                                             for i in range(context_map_size)])
-        self._output_clipping = output_clipping
+        self._output_clipping = pred_clipping
         self._weight_clipping = weight_clipping
         self.set_learning_rate(learning_rate)
 
@@ -49,9 +50,11 @@ class Neuron():
         if output_logits.ndim > 1:
             output_logits = output_logits.diagonal()
 
+        output_logits = np.clip(output_logits, logit(self._output_clipping),
+                                logit(1 - self._output_clipping))
+
         if targets is not None:
-            sigmoids = np.clip(sigmoid(output_logits), self._output_clipping,
-                               1 - self._output_clipping)
+            sigmoids = sigmoid(output_logits)
             update_value = self.learning_rate * (sigmoids - targets) * logits
 
             for idx, ci in enumerate(current_context_indices):
@@ -69,7 +72,7 @@ class CustomLinear():
                  context_size: int,
                  context_map_size: int = 4,
                  learning_rate: float = 0.01,
-                 output_clipping: float = 0.01,
+                 pred_clipping: float = 0.01,
                  weight_clipping: float = 5,
                  bias: bool = True):
 
@@ -79,15 +82,15 @@ class CustomLinear():
         if bias:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, learning_rate)
+                       pred_clipping, weight_clipping, learning_rate)
                 for _ in range(max(1, size - 1))
             ]
-            self._bias = np.random.uniform(output_clipping,
-                                           1 - output_clipping)
+            self._bias = np.random.uniform(logit(pred_clipping),
+                                           logit(1 - pred_clipping))
         else:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, learning_rate)
+                       pred_clipping, weight_clipping, learning_rate)
                 for _ in range(size)
             ]
             self._bias = None
@@ -116,7 +119,7 @@ class Linear():
                  context_size: int,
                  context_map_size: int = 4,
                  learning_rate: float = 0.01,
-                 output_clipping: float = 0.01,
+                 pred_clipping: float = 0.01,
                  weight_clipping: float = 5,
                  bias: bool = True):
 
@@ -124,8 +127,7 @@ class Linear():
             bias = False
 
         if bias:
-            self._bias = np.random.uniform(output_clipping,
-                                           1 - output_clipping)
+            self._bias = np.random.uniform(pred_clipping, 1 - pred_clipping)
         else:
             self._bias = None
 
@@ -139,7 +141,7 @@ class Linear():
                                             for i in range(context_map_size)])
         self._weights = np.ones(shape=(size, 2**context_map_size,
                                        input_size)) * (1 / input_size)
-        self._output_clipping = output_clipping
+        self._output_clipping = pred_clipping
         self._weight_clipping = weight_clipping
         self.size = size
         self.set_learning_rate(learning_rate)
@@ -156,16 +158,17 @@ class Linear():
         current_selected_weights = self._weights[np.arange(self.size).reshape(
             -1, 1), current_context_indices, :]
 
-        output_logits = np.matmul(current_selected_weights,
-                                  logits).diagonal(axis1=1, axis2=2)
+        output_logits = np.clip(
+            np.matmul(current_selected_weights, logits).diagonal(axis1=1,
+                                                                 axis2=2),
+            logit(self._output_clipping), logit(1 - self._output_clipping))
 
         if self._bias is not None:
             output_logits.setflags(write=1)
             output_logits[0] = self._bias
 
         if targets is not None:
-            sigmoids = np.clip(sigmoid(output_logits), self._output_clipping,
-                               1 - self._output_clipping)
+            sigmoids = sigmoid(output_logits)
             update_value = self.learning_rate * np.expand_dims(
                 (sigmoids - targets), axis=1) * logits
             self._weights[np.arange(self.size).reshape(
@@ -188,7 +191,7 @@ class GLN():
                  context_map_size: int = 4,
                  layer_bias: bool = True,
                  learning_rate: float = 1e-2,
-                 output_clipping: float = 0.01,
+                 pred_clipping: float = 0.01,
                  weight_clipping: float = 5.0):
 
         self.base_predictor = base_predictor
@@ -196,12 +199,12 @@ class GLN():
         for idx, size in enumerate(layer_sizes):
             if idx == 0:
                 layer = Linear(size, input_size, context_size,
-                               context_map_size, learning_rate,
-                               output_clipping, weight_clipping, layer_bias)
+                               context_map_size, learning_rate, pred_clipping,
+                               weight_clipping, layer_bias)
             else:
                 layer = Linear(size, layer_sizes[idx - 1], context_size,
-                               context_map_size, learning_rate,
-                               output_clipping, weight_clipping, layer_bias)
+                               context_map_size, learning_rate, pred_clipping,
+                               weight_clipping, layer_bias)
             self.layers.append(layer)
         self.set_learning_rate(learning_rate)
 
