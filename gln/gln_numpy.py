@@ -1,3 +1,4 @@
+# %%
 from typing import Sequence, Optional, Callable
 from test_mnist import get_mnist_metrics
 
@@ -232,6 +233,7 @@ class GLN():
         return sigmoid(out)
 
 
+# %%
 if __name__ == '__main__':
     m = GLN(layer_sizes=[4, 4, 1], input_size=784, context_size=784)
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=8, mnist_class=3)
