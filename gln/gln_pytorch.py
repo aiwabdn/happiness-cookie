@@ -28,22 +28,20 @@ class Neuron(nn.Module):
                  context_map_size: int = 4,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 mu: float = 0.0,
-                 std: float = 0.1,
                  learning_rate: float = 0.01):
         super(Neuron, self).__init__()
         # context function for halfspace gating
-        self._projection = nn.Parameter(torch.as_tensor(
-            np.random.normal(loc=mu,
-                             scale=std,
-                             size=(context_map_size, context_size))),
-                                        requires_grad=False)
+        self._context_maps = nn.Parameter(torch.as_tensor(
+            np.random.normal(size=(context_map_size, context_size))),
+                                          requires_grad=False)
         # scale by norm
-        self._projection /= torch.norm(self._projection, dim=1, keepdim=True)
+        self._context_maps /= torch.norm(self._context_maps,
+                                         dim=1,
+                                         keepdim=True)
         # constant values for halfspace gating
-        self._projection_bias = nn.Parameter(torch.normal(
-            mean=mu, std=std, size=(context_map_size, 1)),
-                                             requires_grad=False)
+        self._context_bias = nn.Parameter(torch.randn(size=(context_map_size,
+                                                            1)),
+                                          requires_grad=False)
         # weights for the neuron
         self._weights = nn.Parameter(
             torch.ones(size=(2**context_map_size, input_size),
@@ -56,18 +54,19 @@ class Neuron(nn.Module):
         # clip values
         self._output_clipping = output_clipping
         self._weight_clipping = weight_clipping
-        self.learning_rate = learning_rate
+
+        self.set_learning_rate(learning_rate)
 
     def set_learning_rate(self, lr):
         self.learning_rate = lr
 
     def predict(self, logits, context_inputs, targets=None):
         # project side information and determine context index
-        projected = torch.matmul(self._projection, context_inputs)
-        if projected.ndim == 1:
-            projected = projected.reshape(-1, 1)
+        distances = torch.matmul(self._context_maps, context_inputs)
+        if distances.ndim == 1:
+            distances = distances.reshape(-1, 1)
 
-        mapped_context_binary = (projected > self._projection_bias).int()
+        mapped_context_binary = (distances > self._context_bias).int()
         current_context_indices = torch.squeeze(
             torch.sum(mapped_context_binary * self._boolean_converter,
                       dim=0)).long()
@@ -96,7 +95,7 @@ class Neuron(nn.Module):
         return output_logits
 
     def extra_repr(self):
-        return f'input_size={self._weights.size(1)}, context_map_size={self._projection.size(0)}'
+        return f'input_size={self._weights.size(1)}, context_map_size={self._context_maps.size(0)}'
 
 
 class CustomLinear(nn.Module):
@@ -108,9 +107,7 @@ class CustomLinear(nn.Module):
                  learning_rate: float = 0.01,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 bias: bool = True,
-                 mu: float = 0.0,
-                 std: float = 0.1):
+                 bias: bool = True):
 
         super(CustomLinear, self).__init__()
         if size == 1:
@@ -119,16 +116,16 @@ class CustomLinear(nn.Module):
         if bias:
             self._neurons = nn.ModuleList([
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, mu, std,
-                       learning_rate) for _ in range(max(1, size - 1))
+                       output_clipping, weight_clipping, learning_rate)
+                for _ in range(max(1, size - 1))
             ])
             self._bias = np.random.uniform(output_clipping,
                                            1 - output_clipping)
         else:
             self._neurons = nn.ModuleList([
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, mu, std,
-                       learning_rate) for _ in range(size)
+                       output_clipping, weight_clipping, learning_rate)
+                for _ in range(size)
             ])
             self._bias = None
 
@@ -163,9 +160,7 @@ class Linear(nn.Module):
                  learning_rate: float = 0.01,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 bias: bool = True,
-                 mu: float = 0.0,
-                 std: float = 0.1):
+                 bias: bool = True):
         super(Linear, self).__init__()
 
         self.learning_rate = learning_rate
@@ -179,19 +174,17 @@ class Linear(nn.Module):
             self._bias = None
 
         # context function for halfspace gating
-        self._projection = nn.Parameter(torch.as_tensor(
-            np.random.normal(loc=mu,
-                             scale=std,
-                             size=(size, context_map_size, context_size))),
-                                        requires_grad=False)
+        self._context_maps = nn.Parameter(torch.as_tensor(
+            np.random.normal(size=(size, context_map_size, context_size))),
+                                          requires_grad=False)
         # scale by norm
-        self._projection /= torch.norm(self._projection, dim=2, keepdim=True)
+        self._context_maps /= torch.norm(self._context_maps,
+                                         dim=2,
+                                         keepdim=True)
         # constant values for halfspace gating
-        self._projection_bias = nn.Parameter(torch.as_tensor(
-            np.random.normal(loc=mu,
-                             scale=std,
-                             size=(size, context_map_size, 1))),
-                                             requires_grad=False)
+        self._context_bias = nn.Parameter(torch.as_tensor(
+            np.random.normal(size=(size, context_map_size, 1))),
+                                          requires_grad=False)
         # array to convert mapped_context_binary context to index
         self._boolean_converter = nn.Parameter(torch.as_tensor(
             np.array([[2**i] for i in range(context_map_size)])),
@@ -212,8 +205,8 @@ class Linear(nn.Module):
 
     def predict(self, logits, context_inputs, targets=None):
         # project side information and determine context index
-        projected = torch.matmul(self._projection, context_inputs)
-        mapped_context_binary = (projected > self._projection_bias).int()
+        distances = torch.matmul(self._context_maps, context_inputs)
+        mapped_context_binary = (distances > self._context_bias).int()
         current_context_indices = torch.sum(mapped_context_binary *
                                             self._boolean_converter,
                                             dim=1)
@@ -253,8 +246,8 @@ class Linear(nn.Module):
 
     def extra_repr(self):
         return 'input_size={}, neurons={}, context_map_size={}, bias={}'.format(
-            self._weights.size(2), self._projection.size(0),
-            self._projection.size(1), self._bias)
+            self._weights.size(2), self._context_maps.size(0),
+            self._context_maps.size(1), self._bias)
 
 
 class GLN(nn.Module):

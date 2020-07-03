@@ -1,6 +1,5 @@
 # %%
 from typing import Sequence, Optional, Callable
-from test_mnist import get_mnist_metrics
 
 import numpy as np
 
@@ -16,38 +15,31 @@ class Neuron():
                  context_map_size: int = 4,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 mu: float = 0.0,
-                 std: float = 0.1,
                  learning_rate: float = 0.01):
-        self._projection = np.random.normal(loc=mu,
-                                            scale=std,
-                                            size=(context_map_size,
-                                                  context_size))
-        self._projection /= np.linalg.norm(self._projection,
-                                           ord=2,
-                                           axis=1,
-                                           keepdims=True)
-        self._projection_bias = np.random.normal(loc=mu,
-                                                 scale=std,
-                                                 size=(context_map_size, 1))
+        self._context_maps = np.random.normal(size=(context_map_size,
+                                                    context_size))
+        self._context_maps /= np.linalg.norm(self._context_maps,
+                                             ord=2,
+                                             axis=1,
+                                             keepdims=True)
+        self._context_bias = np.random.normal(size=(context_map_size, 1))
         self._weights = np.ones(shape=(2**context_map_size,
                                        input_size)) * (1 / input_size)
         self._boolean_converter = np.array([[2**i]
                                             for i in range(context_map_size)])
         self._output_clipping = output_clipping
         self._weight_clipping = weight_clipping
-        self.learning_rate = learning_rate
+        self.set_learning_rate(learning_rate)
 
     def set_learning_rate(self, lr):
         self.learning_rate = lr
 
     def predict(self, logits, context_input, targets=None):
-        projected = self._projection.dot(context_input)
-        if projected.ndim == 1:
-            projected = projected.reshape(-1, 1)
+        distances = self._context_maps.dot(context_input)
+        if distances.ndim == 1:
+            distances = distances.reshape(-1, 1)
 
-        mapped_context_binary = (projected > self._projection_bias).astype(
-            np.int)
+        mapped_context_binary = (distances > self._context_bias).astype(np.int)
         current_context_indices = np.sum(mapped_context_binary *
                                          self._boolean_converter,
                                          axis=0)
@@ -79,9 +71,7 @@ class CustomLinear():
                  learning_rate: float = 0.01,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 bias: bool = True,
-                 mu: float = 0.0,
-                 std: float = 0.1):
+                 bias: bool = True):
 
         if size == 1:
             bias = False
@@ -89,16 +79,16 @@ class CustomLinear():
         if bias:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, mu, std,
-                       learning_rate) for _ in range(max(1, size - 1))
+                       output_clipping, weight_clipping, learning_rate)
+                for _ in range(max(1, size - 1))
             ]
             self._bias = np.random.uniform(output_clipping,
                                            1 - output_clipping)
         else:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, mu, std,
-                       learning_rate) for _ in range(size)
+                       output_clipping, weight_clipping, learning_rate)
+                for _ in range(size)
             ]
             self._bias = None
 
@@ -128,11 +118,8 @@ class Linear():
                  learning_rate: float = 0.01,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 bias: bool = True,
-                 mu: float = 0.0,
-                 std: float = 0.1):
+                 bias: bool = True):
 
-        self.learning_rate = learning_rate
         if size == 1:
             bias = False
 
@@ -142,17 +129,12 @@ class Linear():
         else:
             self._bias = None
 
-        self._projection = np.random.normal(loc=mu,
-                                            scale=std,
-                                            size=(size, context_map_size,
-                                                  context_size))
-        self._projection /= np.linalg.norm(self._projection,
-                                           axis=2,
-                                           keepdims=True)
-        self._projection_bias = np.random.normal(loc=mu,
-                                                 scale=std,
-                                                 size=(size, context_map_size,
-                                                       1))
+        self._context_maps = np.random.normal(size=(size, context_map_size,
+                                                    context_size))
+        self._context_maps /= np.linalg.norm(self._context_maps,
+                                             axis=2,
+                                             keepdims=True)
+        self._context_bias = np.random.normal(size=(size, context_map_size, 1))
         self._boolean_converter = np.array([[2**i]
                                             for i in range(context_map_size)])
         self._weights = np.ones(shape=(size, 2**context_map_size,
@@ -160,14 +142,14 @@ class Linear():
         self._output_clipping = output_clipping
         self._weight_clipping = weight_clipping
         self.size = size
+        self.set_learning_rate(learning_rate)
 
     def set_learning_rate(self, lr):
         self.learning_rate = lr
 
     def predict(self, logits, context_inputs, targets=None):
-        projected = np.matmul(self._projection, context_inputs)
-        mapped_context_binary = (projected > self._projection_bias).astype(
-            np.int)
+        distances = np.matmul(self._context_maps, context_inputs)
+        mapped_context_binary = (distances > self._context_bias).astype(np.int)
         current_context_indices = np.sum(mapped_context_binary *
                                          self._boolean_converter,
                                          axis=1)
@@ -240,6 +222,7 @@ class GLN():
 
 # %%
 if __name__ == '__main__':
+    from test_mnist import get_mnist_metrics
     m = GLN(layer_sizes=[4, 4, 1], input_size=784, context_size=784)
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=8, mnist_class=3)
     print('Accuracy:', acc)
