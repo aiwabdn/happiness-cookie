@@ -63,7 +63,9 @@ class Neuron():
             update_value = self.learning_rate * (sigmoids - targets) * logits
 
             for idx, ci in enumerate(current_context_indices):
-                self._weights[ci, :] -= update_value[:, idx]
+                self._weights[ci, :] = np.clip(
+                    self._weights[ci, :] - update_value[:, idx],
+                    -self._weight_clipping, self._weight_clipping)
 
         return output_logits
 
@@ -151,8 +153,8 @@ class Linear():
                                                  scale=std,
                                                  size=(size, context_map_size,
                                                        1))
-        self._boolean_converter = np.array(
-            [[2**i for i in range(context_map_size)]])
+        self._boolean_converter = np.array([[2**i]
+                                            for i in range(context_map_size)])
         self._weights = np.ones(shape=(size, 2**context_map_size,
                                        input_size)) * (1 / input_size)
         self._output_clipping = output_clipping
@@ -166,8 +168,9 @@ class Linear():
         projected = np.matmul(self._projection, context_inputs)
         mapped_context_binary = (projected > self._projection_bias).astype(
             np.int)
-        current_context_indices = np.squeeze(
-            self._boolean_converter.dot(mapped_context_binary))
+        current_context_indices = np.sum(mapped_context_binary *
+                                         self._boolean_converter,
+                                         axis=1)
         current_selected_weights = self._weights[np.arange(self.size).reshape(
             -1, 1), current_context_indices, :]
 
@@ -201,6 +204,7 @@ class GLN():
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
                  context_map_size: int = 4,
+                 layer_bias: bool = True,
                  learning_rate: float = 1e-2,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5.0):
@@ -209,14 +213,15 @@ class GLN():
         self.layers = []
         for idx, size in enumerate(layer_sizes):
             if idx == 0:
-                layer = CustomLinear(size, input_size, context_size,
-                                     context_map_size, learning_rate,
-                                     output_clipping, weight_clipping)
+                layer = Linear(size, input_size, context_size,
+                               context_map_size, learning_rate,
+                               output_clipping, weight_clipping, layer_bias)
             else:
-                layer = CustomLinear(size, layer_sizes[idx - 1], context_size,
-                                     context_map_size, learning_rate,
-                                     output_clipping, weight_clipping)
+                layer = Linear(size, layer_sizes[idx - 1], context_size,
+                               context_map_size, learning_rate,
+                               output_clipping, weight_clipping, layer_bias)
             self.layers.append(layer)
+        self.set_learning_rate(learning_rate)
 
     def set_learning_rate(self, lr):
         for l in self.layers:
