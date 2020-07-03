@@ -1,4 +1,5 @@
-from typing import Sequence
+from typing import Sequence, Optional, Callable
+from test_mnist import get_mnist_metrics
 
 import numpy as np
 
@@ -36,6 +37,9 @@ class Neuron():
         self._weight_clipping = weight_clipping
         self.learning_rate = learning_rate
 
+    def set_learning_rate(self, lr):
+        self.learning_rate = lr
+
     def predict(self, logits, context_input, targets=None):
         projected = self._projection.dot(context_input)
         if projected.ndim == 1:
@@ -68,8 +72,8 @@ class CustomLinear():
                  size: int,
                  input_size: int,
                  context_size: int,
-                 context_map_size: int,
-                 learning_rate: float,
+                 context_map_size: int = 4,
+                 learning_rate: float = 0.01,
                  output_clipping: float = 0.01,
                  weight_clipping: float = 5,
                  bias: bool = True,
@@ -82,18 +86,22 @@ class CustomLinear():
         if bias:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, mu, std)
-                for _ in range(max(1, size - 1))
+                       output_clipping, weight_clipping, mu, std,
+                       learning_rate) for _ in range(max(1, size - 1))
             ]
             self._bias = np.random.uniform(output_clipping,
                                            1 - output_clipping)
         else:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
-                       output_clipping, weight_clipping, mu, std)
-                for _ in range(size)
+                       output_clipping, weight_clipping, mu, std,
+                       learning_rate) for _ in range(size)
             ]
             self._bias = None
+
+    def set_learning_rate(self, lr):
+        for n in self._neurons:
+            n.set_learning_rate(lr)
 
     def predict(self, logits, context_input, targets=None):
         output_logits = []
@@ -104,7 +112,7 @@ class CustomLinear():
         for n in self._neurons:
             output_logits.append(n.predict(logits, context_input, targets))
 
-        output = np.vstack(output_logits)
+        output = np.squeeze(np.vstack(output_logits))
         return output
 
 
@@ -150,6 +158,9 @@ class Linear():
         self._weight_clipping = weight_clipping
         self.size = size
 
+    def set_learning_rate(self, lr):
+        self.learning_rate = lr
+
     def predict(self, logits, context_inputs, targets=None):
         projected = np.matmul(self._projection, context_inputs)
         mapped_context_binary = (projected > self._projection_bias).astype(
@@ -178,7 +189,7 @@ class Linear():
                     np.transpose(update_value, (0, 2, 1)),
                     -self._weight_clipping, self._weight_clipping)
 
-        return output_logits
+        return np.squeeze(output_logits)
 
 
 class GLN():
@@ -186,17 +197,18 @@ class GLN():
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_size: int,
+                 base_predictor: Optional[
+                     Callable[[np.ndarray], np.ndarray]] = None,
                  context_map_size: int = 4,
                  learning_rate: float = 1e-2,
                  output_clipping: float = 0.01,
-                 weight_clipping: float = 5.0,
-                 classes: int = 2,
-                 base_preds_size: int = None):
+                 weight_clipping: float = 5.0):
 
+        self.base_predictor = base_predictor
         self.layers = []
         for idx, size in enumerate(layer_sizes):
             if idx == 0:
-                layer = CustomLinear(size, base_preds_size, context_size,
+                layer = CustomLinear(size, input_size, context_size,
                                      context_map_size, learning_rate,
                                      output_clipping, weight_clipping)
             else:
@@ -206,30 +218,22 @@ class GLN():
             self.layers.append(layer)
 
     def set_learning_rate(self, lr):
-        self.learning_rate = lr
-
-    def predict(self, base_predictions, context_input, targets=None):
-        out = base_predictions
         for l in self.layers:
-            out = l.predict(out, context_input, targets)
+            l.set_learning_rate(lr)
+
+    def predict(self, inputs, context_inputs, targets=None):
+        if callable(self.base_predictor):
+            out = self.base_predictor(inputs)
+        else:
+            out = inputs
+        for l in self.layers:
+            out = l.predict(out, context_inputs, targets)
 
         return sigmoid(out)
 
 
-# %%
-n = GLN(layer_sizes=[4, 4, 1],
-        input_size=784,
-        context_size=784,
-        base_preds_size=784)
-c = np.random.normal(size=(784, 4))
-i = np.random.normal(size=(784, 4))
-t = np.array([0, 1, 1, 0])
-# %%
-n.predict(i, c, t)
-# %%
-from test_mnist import get_mnist_metrics
 if __name__ == '__main__':
-    m = GLN(layer_sizes=[4, 4, 1], input_size=784
+    m = GLN(layer_sizes=[4, 4, 1], input_size=784, context_size=784)
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=8, mnist_class=3)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)

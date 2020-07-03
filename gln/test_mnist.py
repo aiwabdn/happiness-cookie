@@ -61,9 +61,7 @@ def get_mnist_metrics(model,
         y_batch = y_train[batch_start:batch_end]
 
         # run forward with data
-        _ = model.forward(X_batch.T)
-        # update model
-        model.update(y_batch)
+        _ = model.predict(X_batch.T, X_batch.T, y_batch)
 
     # perform inference on test set
     num_batches = int(np.ceil(len(X_test) / batch_size))
@@ -75,7 +73,7 @@ def get_mnist_metrics(model,
         X_batch = X_test[batch_start:batch_end]
 
         # run forward with data
-        outputs.append(result_transform(model.forward(X_batch.T)))
+        outputs.append(result_transform(model.predict(X_batch.T, X_batch.T)))
 
     outputs = np.hstack(outputs).flatten()
 
