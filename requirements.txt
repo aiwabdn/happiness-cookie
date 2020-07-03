@@ -3,5 +3,6 @@ jaxlib
 numpy
 pandas
 scikit-learn
+tensorflow
 torch
 torchvision

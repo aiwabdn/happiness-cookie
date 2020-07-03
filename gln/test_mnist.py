@@ -9,13 +9,11 @@ def get_mnist_numpy():
 
     trainset = MNIST('./data', train=True, download=True)
     X_train = trainset.data.numpy().reshape(60000, -1).astype(np.float) / 255
-    y_train = label_binarize(trainset.train_labels.numpy(), classes=range(10))
-    # y_train = trainset.train_labels.numpy()
+    y_train = trainset.train_labels.numpy()
 
     testset = MNIST('./data', train=False, download=True)
     X_test = testset.data.numpy().reshape(10000, -1).astype(np.float) / 255
-    y_test = label_binarize(testset.test_labels.numpy(), classes=range(10))
-    # y_test = testset.test_labels.numpy()
+    y_test = testset.test_labels.numpy()
 
     return X_train, y_train, X_test, y_test
 
@@ -41,6 +39,8 @@ def get_mnist_metrics(model,
 
     # get MNIST data as numpy arrays
     X_train, y_train, X_test, y_test = get_mnist_numpy()
+    y_train = label_binarize(trainset.train_labels.numpy(), classes=range(10))
+    y_test = label_binarize(testset.test_labels.numpy(), classes=range(10))
     # randomly shuffle data
     X_train, y_train = shuffle_data(X_train, y_train)
     X_test, y_test = shuffle_data(X_test, y_test)

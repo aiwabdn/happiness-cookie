@@ -53,14 +53,14 @@ class Linear(OnlineUpdateModule):
         logits_size = self.input_size + int(self.bias)
         num_context_indices = 1 << self.context_map_size
         if self.classes is None:
-            context_maps_shape = (self.size, self.context_map_size, self.context_size)
-            context_bias_shape = (self.size, self.context_map_size)
-            weights_shape = (num_context_indices, self.size, logits_size)
+            context_maps_shape = (1, self.size, self.context_map_size, self.context_size)
+            context_bias_shape = (1, self.size, self.context_map_size)
+            weights_shape = (self.size, num_context_indices, logits_size)
             bias_shape = (1, 1)
         else:
-            context_maps_shape = (self.classes, self.size, self.context_map_size, self.context_size)
-            context_bias_shape = (self.classes, self.size, self.context_map_size)
-            weights_shape = (num_context_indices, self.classes, self.size, logits_size)
+            context_maps_shape = (1, self.classes, self.size, self.context_map_size, self.context_size)
+            context_bias_shape = (1, self.classes, self.size, self.context_map_size)
+            weights_shape = (self.classes, self.size, num_context_indices, logits_size)
             bias_shape = (1, self.classes, 1)
 
         params = dict()
@@ -88,25 +88,25 @@ class Linear(OnlineUpdateModule):
         if self.classes is not None:
             context = jnp.expand_dims(context, axis=1)
 
-        context_maps = jnp.expand_dims(self.params['context_maps'], axis=0)
-
         if 'context_bias' in self.params:
-            context_bias = jnp.expand_dims(self.params['context_bias'], axis=0)
             context_index = (context_maps * context).sum(axis=-1) > context_bias
         else:
             context_index = (context_maps * context).sum(axis=-1) > 0.0
 
-        context_map_values = jnp.asarray([[[1 << n for n in range(self.context_map_size)]]])
-        if self.classes is not None:
-            context_map_values = jnp.expand_dims(context_map_values, axis=1)
-        context_index = jnp.where(context_index, context_map_values, 0).sum(axis=-1, keepdims=True)
-
-        weights = jnp.take_along_axis(self.params['weights'], indices=context_index, axis=0)
-
         if self.classes is None:
-            bias = jnp.tile(self.params['bias'], reps=(logits.shape[0], 1))
+            context_map_values = jnp.asarray([[[1 << n for n in range(self.context_map_size)]]])
         else:
-            bias = jnp.tile(self.params['bias'], reps=(logits.shape[0], 1, 1))
+            context_map_values = jnp.asarray([[[[1 << n for n in range(self.context_map_size)]]]])
+        context_index = jnp.where(context_index, context_map_values, 0)
+        context_index = context_index.sum(axis=-1, keepdims=True)
+
+        weights = jnp.take_along_axis(self.params['weights'], indices=context_index, axis=0)???
+
+        batch_size = logits.shape[0]
+        if self.classes is None:
+            bias = jnp.tile(self.params['bias'], reps=(batch_size, 1))
+        else:
+            bias = jnp.tile(self.params['bias'], reps=(batch_size, 1, 1))
         logits = jnp.concatenate([logits, bias], axis=-1)
         logits = jnp.expand_dims(logits, axis=-1)
 
@@ -146,6 +146,14 @@ class Linear(OnlineUpdateModule):
                 operand=self.params['weights'], scatter_indices=context_index, updates=delta,
                 dimension_numbers=dims
             )
+            # if self.weight_clipping is None:
+            #     self.weights.scatter_nd_add(indices=neuron_context_index, updates=delta)
+            # else:
+            #     weights = tf.clip_by_value(
+            #         weights + delta, clip_value_min=-self.weight_clipping,
+            #         clip_value_max=self.weight_clipping
+            #     )
+            #     self.weights.scatter_nd_update(indices=neuron_context_index, updates=weights)
 
             if self.weight_clipping is not None:
                 self.params['weights'] = jnp.clip(
@@ -197,17 +205,14 @@ class GLN(OnlineUpdateModule):
         if self.base_preds is not None:
             self.params['rng'], rng = jnr.split(key=self.params['rng'], num=2)
             if self.classes is None:
-                self.params['base_logits'] = jnr.uniform(
-                    key=rng, shape=(1, self.base_preds),
-                    minval=jsp.special.logit(self.pred_clipping),
-                    maxval=jsp.special.logit(1.0 - self.pred_clipping)
-                )
+                base_logits_shape = (1, self.base_preds)
             else:
-                self.params['base_logits'] = jnr.uniform(
-                    key=rng, shape=(1, self.classes, self.base_preds),
-                    minval=jsp.special.logit(self.pred_clipping),
-                    maxval=jsp.special.logit(1.0 - self.pred_clipping)
-                )
+                base_logits_shape = (1, self.classes, self.base_preds)
+            self.params['base_logits'] = jnr.uniform(
+                key=rng, shape=base_logits_shape,
+                minval=jsp.special.logit(self.pred_clipping),
+                maxval=jsp.special.logit(1.0 - self.pred_clipping)
+            )
 
         # Initialize layers
         self.params['rng'], *rngs = jnr.split(key=self.params['rng'], num=(len(self.layers) + 1))
@@ -248,10 +253,11 @@ class GLN(OnlineUpdateModule):
     def _predict(self, input, target=None):
         # Base predictions
         if 'base_logits' in self.params:
+            batch_size = input.shape[0]
             if self.classes is None:
-                logits = jnp.tile(self.params['base_logits'], reps=(input.shape[0], 1))
+                logits = jnp.tile(self.params['base_logits'], reps=(batch_size, 1))
             else:
-                logits = jnp.tile(self.params['base_logits'], reps=(input.shape[0], 1, 1))
+                logits = jnp.tile(self.params['base_logits'], reps=(batch_size, 1, 1))
         else:
             logits = jnp.clip(input, a_min=self.pred_clipping, a_max=(1.0 - self.pred_clipping))
             logits = jsp.special.logit(logits)
@@ -259,19 +265,23 @@ class GLN(OnlineUpdateModule):
                 logits = jnp.expand_dims(logits, axis=1)
                 logits = jnp.tile(logits, reps=(1, self.classes, 1))
 
-        # # Turn class integer into one-hot
-        # if classes is not None and jax.dtypes.issubdtype(target.dtype, jnp.integer):
-        #     target = jnn.one_hot(target, num_classes=classes, dtype=bool)
+        # Turn class integer into one-hot
+        if target is not None:
+            if self.classes is not None and jax.dtypes.issubdtype(target.dtype, jnp.integer):
+                target = jnn.one_hot(target, num_classes=self.classes, dtype=bool)
+            else:
+                target = jnp.where(target, 1.0, 0.0)
 
         # Layers
         for n, layer in enumerate(self.layers):
             logits = layer.predict(logits=logits, context=input, target=target)
 
         # Output prediction
+        logits = jnp.squeeze(logits, axis=-1)
         if self.classes is None:
-            return jnp.squeeze(logits, axis=1) > 0.0
+            return logits > 0.0
         else:
-            return jnp.argmax(jnp.squeeze(logits, axis=2), axis=1)
+            return jnp.argmax(logits, axis=1)
 
 
 # # @functools.partial(jax.jit, static_argnums=(4,))
@@ -360,8 +370,7 @@ def main():
     count_weights = (lambda count, x: count + x.size if isinstance(x, jnp.ndarray) else count)
     print('Weights:', jax.tree_util.tree_reduce(count_weights, model.params, initializer=0))
 
-    xs = model.predict(test_images)
-    print('Accuracy:', np.count_nonzero(xs == test_labels) / test_labels.shape[0])
+    print('Accuracy:', np.count_nonzero(model.predict(test_images) == test_labels) / test_labels.shape[0])
     start = time.time()
     batch_size = 10
     for n in range(100):  # train_labels.shape[0] // batch_size
@@ -369,7 +378,7 @@ def main():
         target = train_labels[n * batch_size: (n + 1) * batch_size]
         model.predict(input, target)
     print('Time:', time.time() - start)
-    print('Accuracy:', np.count_nonzero(xs == test_labels) / test_labels.shape[0])
+    print('Accuracy:', np.count_nonzero(model.predict(test_images) == test_labels) / test_labels.shape[0])
 
 
 if __name__ == '__main__':
