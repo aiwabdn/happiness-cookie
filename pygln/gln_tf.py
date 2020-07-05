@@ -10,7 +10,7 @@ class OnlineUpdateModule(tf.Module):
     ):
         assert learning_rate > 0.0
         assert 0.0 < pred_clipping < 1.0
-        assert weight_clipping is None or weight_clipping > 1.0
+        assert weight_clipping is None or weight_clipping >= 1.0
 
         self.learning_rate = learning_rate
         self.pred_clipping = pred_clipping
@@ -314,19 +314,19 @@ class GLN(OnlineUpdateModule):
 
 def main():
     import time
-    from test_mnist import get_mnist_numpy
+    import datasets
 
-    train_images, train_labels, test_images, test_labels = get_mnist_numpy()
+    train_images, train_labels, test_images, test_labels = datasets.get_mnist()
 
     model = GLN(
-        layer_sizes=[4, 4, 1], input_size=train_images.shape[1], context_map_size=4,
-        learning_rate=1e-3, pred_clipping=0.05, weight_clipping=5.0, classes=10, base_preds=None
+        layer_sizes=[32, 32, 1], input_size=train_images.shape[1], context_map_size=4,
+        learning_rate=3e-5, pred_clipping=0.001, weight_clipping=5.0, classes=10, base_preds=None
     )
 
     print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
 
     start = time.time()
-    model.train(train_images, train_labels, batch_size=10, num_epochs=1)
+    model.train(train_images, train_labels, batch_size=1, num_epochs=1)
     print('Time:', time.time() - start)
 
     print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))

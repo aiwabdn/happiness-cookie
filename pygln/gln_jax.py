@@ -3,9 +3,9 @@ from jax import lax, nn as jnn, numpy as jnp, random as jnr, scipy as jsp
 from typing import Sequence
 
 
+jax.config.update("jax_debug_nans", True)
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_numpy_rank_promotion", "raise")
-jax.config.update("jax_debug_nans", True)
 
 
 class OnlineUpdateModule(object):
@@ -13,7 +13,7 @@ class OnlineUpdateModule(object):
     def __init__(self, learning_rate: float, pred_clipping: float, weight_clipping: float):
         assert learning_rate > 0.0
         assert 0.0 < pred_clipping < 1.0
-        assert weight_clipping is None or weight_clipping > 1.0
+        assert weight_clipping is None or weight_clipping >= 1.0
 
         self.learning_rate = learning_rate
         self.pred_clipping = pred_clipping
@@ -322,7 +322,7 @@ class GLN(OnlineUpdateModule):
         def body(n, num_correct):
             # jnp.arange not working here
             # batch = jnp.arange(n * batch_size, (n + 1) * batch_size)
-            batch = jnp.linspace(n * batch_size, (n + 1) * batch_size, batch_size, dtype=int)
+            batch = jnp.linspace(n * batch_size, (n + 1) * batch_size - 1, batch_size, dtype=int)
             batch = batch % num_instances
             prediction = self._jax_predict(params=params, input=inputs[batch])
             num_correct += jnp.count_nonzero(prediction == targets[batch])
@@ -352,7 +352,9 @@ class GLN(OnlineUpdateModule):
             else:
                 # jnp.arange not working here
                 # batch = jnp.arange(n * batch_size, (n + 1) * batch_size)
-                batch = jnp.linspace(n * batch_size, (n + 1) * batch_size, batch_size, dtype=int)
+                batch = jnp.linspace(
+                    n * batch_size, (n + 1) * batch_size - 1, num=batch_size, dtype=int
+                )
                 batch = batch % num_instances
             params, _ = self._jax_update(params=params, input=inputs[batch], target=targets[batch])
             return params
@@ -370,13 +372,13 @@ class GLN(OnlineUpdateModule):
 
 def main():
     import time
-    from test_mnist import get_mnist_numpy
+    import datasets
 
-    train_images, train_labels, test_images, test_labels = get_mnist_numpy()
+    train_images, train_labels, test_images, test_labels = datasets.get_mnist()
 
     model = GLN(
-        layer_sizes=[4, 4, 1], input_size=train_images.shape[1], context_map_size=4,
-        learning_rate=1e-3, pred_clipping=0.05, weight_clipping=5.0, classes=10, base_preds=None
+        layer_sizes=[32, 32, 1], input_size=train_images.shape[1], context_map_size=4,
+        learning_rate=3e-5, pred_clipping=0.001, weight_clipping=5.0, classes=10, base_preds=None
     )
 
     count_weights = (lambda count, x: count + x.size if isinstance(x, jnp.ndarray) else count)
@@ -385,7 +387,7 @@ def main():
     print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
 
     start = time.time()
-    model.train(train_images, train_labels, batch_size=10, num_epochs=1)
+    model.train(train_images, train_labels, batch_size=1, num_epochs=1)
     print('Time:', time.time() - start)
 
     print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))

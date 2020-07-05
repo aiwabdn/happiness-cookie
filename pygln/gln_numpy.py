@@ -266,7 +266,7 @@ sigmoid(l.predict(x, x, y))
 
 # %%
 if __name__ == '__main__':
-    from test_mnist import get_mnist_metrics
+    from datasets import get_mnist_metrics
     m = GLN(layer_sizes=[128, 128, 128, 1],
             input_size=784,
             context_size=784,
@@ -277,42 +277,42 @@ if __name__ == '__main__':
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
 
-# %%
-from test_mnist import get_mnist_numpy, shuffle_data
-from tqdm import tqdm
-idx = 1
-xt, yt, xtt, ytt = get_mnist_numpy()
-yt[yt >= idx] = idx
-# yt[yt == idx] = 1
-ytt[ytt >= idx] = idx
-# ytt[ytt == idx] = 1
-yt = 1 - yt
-ytt = 1 - ytt
-xt, yt = shuffle_data(xt, yt)
-xtt, ytt = shuffle_data(xtt, ytt)
+    # %%
+    from datasets import get_mnist_numpy, shuffle_data
+    from tqdm import tqdm
+    idx = 1
+    xt, yt, xtt, ytt = get_mnist_numpy()
+    yt[yt >= idx] = idx
+    # yt[yt == idx] = 1
+    ytt[ytt >= idx] = idx
+    # ytt[ytt == idx] = 1
+    yt = 1 - yt
+    ytt = 1 - ytt
+    xt, yt = shuffle_data(xt, yt)
+    xtt, ytt = shuffle_data(xtt, ytt)
 
-m = GLN(layer_sizes=[4, 4, 1],
-        input_size=784,
-        context_size=784,
-        classes=np.unique(ytt),
-        learning_rate=0.001)
+    m = GLN(layer_sizes=[4, 4, 1],
+            input_size=784,
+            context_size=784,
+            classes=np.unique(ytt),
+            learning_rate=0.001)
 
-batch_size = 1
-for i in tqdm(range(0, len(xt), batch_size)):
-    x = xt[i * batch_size:(i + 1) * batch_size].T
-    y = yt[i * batch_size:(i + 1) * batch_size]
-    out = m.predict(x, x, y)
+    batch_size = 1
+    for i in tqdm(range(0, len(xt), batch_size)):
+        x = xt[i * batch_size:(i + 1) * batch_size].T
+        y = yt[i * batch_size:(i + 1) * batch_size]
+        out = m.predict(x, x, y)
 
-# %%
-preds = []
-for i in tqdm(range(0, len(xtt), batch_size)):
-    x = xtt[i * batch_size:(i + 1) * batch_size].T
-    y = ytt[i * batch_size:(i + 1) * batch_size]
-    out = m.predict(x, x)
-    preds.append(out)
+    # %%
+    preds = []
+    for i in tqdm(range(0, len(xtt), batch_size)):
+        x = xtt[i * batch_size:(i + 1) * batch_size].T
+        y = ytt[i * batch_size:(i + 1) * batch_size]
+        out = m.predict(x, x)
+        preds.append(out)
 
-# %%
-# preds = (np.stack(preds).flatten() > 0.5).astype(int)
-# preds = np.hstack(preds).reshape(-1, idx + 1).argmax(axis=1)
-preds = (np.array(preds) > 0.5).astype(int)
-print('acc', sum(np.array(preds) == ytt) / len(ytt))
+    # %%
+    # preds = (np.stack(preds).flatten() > 0.5).astype(int)
+    # preds = np.hstack(preds).reshape(-1, idx + 1).argmax(axis=1)
+    preds = (np.array(preds) > 0.5).astype(int)
+    print('acc', sum(np.array(preds) == ytt) / len(ytt))

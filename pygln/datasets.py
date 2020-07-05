@@ -4,7 +4,7 @@ from sklearn.preprocessing import label_binarize
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
 
-def get_mnist_numpy():
+def get_mnist():
     from torchvision.datasets import MNIST
 
     trainset = MNIST('./data', train=True, download=True)
@@ -31,6 +31,7 @@ def get_mnist_metrics(model,
                       data_transform=None,
                       result_transform=None):
     from tqdm import tqdm
+    from sklearn.preprocessing import label_binarize
 
     if not data_transform:
         data_transform = lambda x, y: (x, y)

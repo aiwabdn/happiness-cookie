@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from typing import Callable, Optional, Sequence
 
-from test_mnist import get_mnist_metrics
+from pygln.datasets import get_mnist_metrics
 
 if torch.cuda.is_available():
     DEVICE = 'cuda'
