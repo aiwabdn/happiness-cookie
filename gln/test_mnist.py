@@ -1,19 +1,19 @@
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import label_binarize
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
 
 def get_mnist_numpy():
     from torchvision.datasets import MNIST
-    from sklearn.preprocessing import label_binarize
 
     trainset = MNIST('./data', train=True, download=True)
     X_train = trainset.data.numpy().reshape(60000, -1).astype(np.float) / 255
-    y_train = trainset.train_labels.numpy()
+    y_train = trainset.targets.numpy()
 
     testset = MNIST('./data', train=False, download=True)
     X_test = testset.data.numpy().reshape(10000, -1).astype(np.float) / 255
-    y_test = testset.test_labels.numpy()
+    y_test = testset.targets.numpy()
 
     return X_train, y_train, X_test, y_test
 
@@ -22,7 +22,7 @@ def shuffle_data(X, y):
     assert X.shape[0] == y.shape[0]
     rng = np.random.default_rng()
     permutation = rng.permutation(X.shape[0])
-    return X[permutation, :], y[permutation, :]
+    return X[permutation, :], y[permutation]
 
 
 def get_mnist_metrics(model,
@@ -39,14 +39,9 @@ def get_mnist_metrics(model,
 
     # get MNIST data as numpy arrays
     X_train, y_train, X_test, y_test = get_mnist_numpy()
-    y_train = label_binarize(trainset.train_labels.numpy(), classes=range(10))
-    y_test = label_binarize(testset.test_labels.numpy(), classes=range(10))
     # randomly shuffle data
     X_train, y_train = shuffle_data(X_train, y_train)
     X_test, y_test = shuffle_data(X_test, y_test)
-    # choose the target class
-    y_train = y_train[:, mnist_class]
-    y_test = y_test[:, mnist_class]
 
     X_train, y_train = data_transform(X_train, y_train)
     X_test, _ = data_transform(X_test, y_test)
@@ -77,14 +72,26 @@ def get_mnist_metrics(model,
         # run forward with data
         outputs.append(result_transform(model.predict(X_batch.T, X_batch.T)))
 
-    outputs = np.hstack(outputs).flatten()
+    if batch_size == 1:
+        outputs = np.vstack(outputs).T
+    else:
+        outputs = np.hstack(outputs)
 
     # threshold outputs
-    outputs = (outputs.flatten() > 0.5).astype(np.int)
+    outputs = (outputs > 0.5).astype(np.int)
 
     # define metrics
-    classes = [f'not_{mnist_class}', f'is_{mnist_class}']
+    classes = np.unique(y_train)
+    y_true_bin = label_binarize(y_test, classes=classes).T
+    bin_acc = np.sum(outputs == y_true_bin) / np.prod(y_true_bin.shape)
+    print('overall binary accuracy', bin_acc)
+    per_class_acc = (outputs == y_true_bin).sum(axis=1) / y_true_bin.shape[1]
+    print('per class accuracy', per_class_acc)
+    print('average per class accuracy', np.mean(per_class_acc))
+
+    outputs = outputs.argmax(axis=0).flatten()
     accuracy = 100 * sum(y_test == outputs) / len(y_test)
+    print('overall accuracy', accuracy)
     conf_mat = pd.DataFrame(confusion_matrix(y_test, outputs),
                             index=classes,
                             columns=classes)

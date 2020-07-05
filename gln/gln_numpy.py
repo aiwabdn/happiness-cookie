@@ -1,8 +1,9 @@
 # %%
-from typing import Sequence, Optional, Callable
+from typing import Sequence, Optional, Callable, Union
 
 import numpy as np
 from scipy.special import logit
+from sklearn.preprocessing import label_binarize
 
 
 def sigmoid(X: np.ndarray):
@@ -121,29 +122,43 @@ class Linear():
                  learning_rate: float = 0.01,
                  pred_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 bias: bool = True):
+                 bias: bool = True,
+                 num_classes: int = 2):
 
+        self.num_classes = num_classes
+        self.size = size
         if size == 1:
             bias = False
 
+        if num_classes < 2:
+            raise ValueError("Number of classes need to be at least 2")
+        elif num_classes == 2:
+            # binary case
+            self.num_classes = 1
+
         if bias:
-            self._bias = np.random.uniform(pred_clipping, 1 - pred_clipping)
+            self._bias = np.random.uniform(low=logit(pred_clipping),
+                                           high=logit(1 - pred_clipping),
+                                           size=(self.num_classes, 1))
         else:
             self._bias = None
 
-        self._context_maps = np.random.normal(size=(size, context_map_size,
+        self._context_maps = np.random.normal(size=(self.num_classes, size,
+                                                    context_map_size,
                                                     context_size))
         self._context_maps /= np.linalg.norm(self._context_maps,
-                                             axis=2,
+                                             axis=-1,
                                              keepdims=True)
-        self._context_bias = np.random.normal(size=(size, context_map_size, 1))
+        self._context_bias = np.random.normal(size=(self.num_classes, size,
+                                                    context_map_size, 1))
         self._boolean_converter = np.array([[2**i]
                                             for i in range(context_map_size)])
-        self._weights = np.ones(shape=(size, 2**context_map_size,
+        self._weights = np.ones(shape=(self.num_classes, size,
+                                       2**context_map_size,
                                        input_size)) * (1 / input_size)
+
         self._output_clipping = pred_clipping
         self._weight_clipping = weight_clipping
-        self.size = size
         self.set_learning_rate(learning_rate)
 
     def set_learning_rate(self, lr):
@@ -154,31 +169,44 @@ class Linear():
         mapped_context_binary = (distances > self._context_bias).astype(np.int)
         current_context_indices = np.sum(mapped_context_binary *
                                          self._boolean_converter,
-                                         axis=1)
-        current_selected_weights = self._weights[np.arange(self.size).reshape(
-            -1, 1), current_context_indices, :]
+                                         axis=-2)
+        current_selected_weights = self._weights[
+            np.arange(self.num_classes).reshape(-1, 1, 1),
+            np.arange(self.size).reshape(1, -1, 1), current_context_indices, :]
 
+        logits = np.expand_dims(logits, axis=-3)
         output_logits = np.clip(
-            np.matmul(current_selected_weights, logits).diagonal(axis1=1,
-                                                                 axis2=2),
+            np.matmul(current_selected_weights, logits).diagonal(axis1=-2,
+                                                                 axis2=-1),
             logit(self._output_clipping), logit(1 - self._output_clipping))
 
+        # print(logits.shape)
+        # print(output_logits.shape)
+        # print(self._bias)
+        # print(output_logits)
         if self._bias is not None:
             output_logits.setflags(write=1)
-            output_logits[0] = self._bias
+            output_logits[:, 0] = self._bias
 
         if targets is not None:
             sigmoids = sigmoid(output_logits)
-            update_value = self.learning_rate * np.expand_dims(
-                (sigmoids - targets), axis=1) * logits
-            self._weights[np.arange(self.size).reshape(
-                -1, 1), current_context_indices, :] = np.clip(
-                    self._weights[np.arange(self.size).
-                                  reshape(-1, 1), current_context_indices, :] -
-                    np.transpose(update_value, (0, 2, 1)),
+            diff = sigmoids - np.expand_dims(targets, axis=1)
+            update_value = self.learning_rate * np.expand_dims(diff,
+                                                               axis=2) * logits
+            # print(update_value.shape)
+            # print('--')
+            self._weights[
+                np.arange(self.num_classes).reshape(-1, 1, 1),
+                np.arange(self.size).
+                reshape(1, -1, 1), current_context_indices, :] = np.clip(
+                    self.
+                    _weights[np.arange(self.num_classes).reshape(-1, 1, 1),
+                             np.arange(self.size).
+                             reshape(1, -1, 1), current_context_indices, :] -
+                    np.transpose(update_value, (0, 1, 3, 2)),
                     -self._weight_clipping, self._weight_clipping)
 
-        return np.squeeze(output_logits)
+        return output_logits
 
 
 class GLN():
@@ -186,6 +214,7 @@ class GLN():
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_size: int,
+                 classes: Sequence[Union[int, str]] = [0, 1],
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
                  context_map_size: int = 4,
@@ -194,17 +223,19 @@ class GLN():
                  pred_clipping: float = 0.01,
                  weight_clipping: float = 5.0):
 
+        self.classes = classes
+        self.num_classes = len(classes)
         self.base_predictor = base_predictor
         self.layers = []
         for idx, size in enumerate(layer_sizes):
             if idx == 0:
                 layer = Linear(size, input_size, context_size,
                                context_map_size, learning_rate, pred_clipping,
-                               weight_clipping, layer_bias)
+                               weight_clipping, layer_bias, self.num_classes)
             else:
                 layer = Linear(size, layer_sizes[idx - 1], context_size,
                                context_map_size, learning_rate, pred_clipping,
-                               weight_clipping, layer_bias)
+                               weight_clipping, layer_bias, self.num_classes)
             self.layers.append(layer)
         self.set_learning_rate(learning_rate)
 
@@ -213,6 +244,8 @@ class GLN():
             l.set_learning_rate(lr)
 
     def predict(self, inputs, context_inputs, targets=None):
+        if targets is not None:
+            targets = label_binarize(targets, classes=self.classes).T
         if callable(self.base_predictor):
             out = self.base_predictor(inputs)
         else:
@@ -220,14 +253,66 @@ class GLN():
         for l in self.layers:
             out = l.predict(out, context_inputs, targets)
 
-        return sigmoid(out)
+        return np.squeeze(sigmoid(out))
 
+
+# %%
+l = Linear(4, 784, 784, num_classes=10)
+x = np.random.normal(size=(784, 2))
+y = label_binarize([0, 1], classes=range(10)).T
+
+# %%
+sigmoid(l.predict(x, x, y))
 
 # %%
 if __name__ == '__main__':
     from test_mnist import get_mnist_metrics
-    m = GLN(layer_sizes=[4, 4, 1], input_size=784, context_size=784)
-    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=8, mnist_class=3)
+    m = GLN(layer_sizes=[128, 128, 128, 1],
+            input_size=784,
+            context_size=784,
+            classes=range(10),
+            layer_bias=False)
+    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
+
+# %%
+from test_mnist import get_mnist_numpy, shuffle_data
+from tqdm import tqdm
+idx = 1
+xt, yt, xtt, ytt = get_mnist_numpy()
+yt[yt >= idx] = idx
+# yt[yt == idx] = 1
+ytt[ytt >= idx] = idx
+# ytt[ytt == idx] = 1
+yt = 1 - yt
+ytt = 1 - ytt
+xt, yt = shuffle_data(xt, yt)
+xtt, ytt = shuffle_data(xtt, ytt)
+
+m = GLN(layer_sizes=[4, 4, 1],
+        input_size=784,
+        context_size=784,
+        classes=np.unique(ytt),
+        learning_rate=0.001)
+
+batch_size = 1
+for i in tqdm(range(0, len(xt), batch_size)):
+    x = xt[i * batch_size:(i + 1) * batch_size].T
+    y = yt[i * batch_size:(i + 1) * batch_size]
+    out = m.predict(x, x, y)
+
+# %%
+preds = []
+for i in tqdm(range(0, len(xtt), batch_size)):
+    x = xtt[i * batch_size:(i + 1) * batch_size].T
+    y = ytt[i * batch_size:(i + 1) * batch_size]
+    out = m.predict(x, x)
+    preds.append(out)
+
+# %%
+# preds = (np.stack(preds).flatten() > 0.5).astype(int)
+# preds = np.hstack(preds).reshape(-1, idx + 1).argmax(axis=1)
+preds = (np.array(preds) > 0.5).astype(int)
+print('acc', sum(np.array(preds) == ytt) / len(ytt))
