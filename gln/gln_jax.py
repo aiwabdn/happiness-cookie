@@ -5,7 +5,7 @@ from typing import Sequence
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_numpy_rank_promotion", "raise")
-# jax.config.update("jax_debug_nans", True)
+jax.config.update("jax_debug_nans", True)
 
 
 class OnlineUpdateModule(object):
@@ -58,7 +58,9 @@ class Linear(OnlineUpdateModule):
             weights_shape = (self.size, num_context_indices, logits_size)
             bias_shape = (1, 1)
         else:
-            context_maps_shape = (1, self.classes, self.size, self.context_map_size, self.context_size)
+            context_maps_shape = (
+                1, self.classes, self.size, self.context_map_size, self.context_size
+            )
             context_bias_shape = (1, self.classes, self.size, self.context_map_size)
             weights_shape = (self.classes, self.size, num_context_indices, logits_size)
             bias_shape = (1, self.classes, 1)
@@ -89,9 +91,10 @@ class Linear(OnlineUpdateModule):
             context = jnp.expand_dims(context, axis=1)
 
         if 'context_bias' in self.params:
-            context_index = (context_maps * context).sum(axis=-1) > context_bias
+            context_bias = self.params['context_bias']
         else:
-            context_index = (context_maps * context).sum(axis=-1) > 0.0
+            context_bias = 0.0
+        context_index = (self.params['context_maps'] * context).sum(axis=-1) > context_bias
 
         if self.classes is None:
             context_map_values = jnp.asarray([[[1 << n for n in range(self.context_map_size)]]])
@@ -100,7 +103,32 @@ class Linear(OnlineUpdateModule):
         context_index = jnp.where(context_index, context_map_values, 0)
         context_index = context_index.sum(axis=-1, keepdims=True)
 
-        weights = jnp.take_along_axis(self.params['weights'], indices=context_index, axis=0)???
+        batch_size = logits.shape[0]
+        if self.classes is None:
+            neuron_index = jnp.asarray([[[n] for n in range(self.size)]])
+            neuron_index = jnp.tile(neuron_index, reps=(batch_size, 1, 1))
+            context_index = jnp.concatenate([neuron_index, context_index], axis=-1)
+        else:
+            class_neuron_index = jnp.asarray(
+                [[[[c, n] for n in range(self.size)] for c in range(self.classes)]]
+            )
+            class_neuron_index = jnp.tile(class_neuron_index, reps=(batch_size, 1, 1, 1))
+            context_index = jnp.concatenate([class_neuron_index, context_index], axis=-1)
+
+        if self.classes is None:
+            dims = lax.GatherDimensionNumbers(
+                offset_dims=(2,), collapsed_slice_dims=(0, 1), start_index_map=(0, 1)
+            )
+            slice_sizes = (1, 1, self.input_size + int(self.bias))
+        else:
+            dims = lax.GatherDimensionNumbers(
+                offset_dims=(3,), collapsed_slice_dims=(0, 1, 2), start_index_map=(0, 1, 2)
+            )
+            slice_sizes = (1, 1, 1, self.input_size + int(self.bias))
+        weights = lax.gather(
+            operand=self.params['weights'], start_indices=context_index, dimension_numbers=dims,
+            slice_sizes=slice_sizes
+        )
 
         batch_size = logits.shape[0]
         if self.classes is None:
@@ -121,43 +149,30 @@ class Linear(OnlineUpdateModule):
             output_preds = jnn.sigmoid(output_logits)
             target = jnp.expand_dims(jnp.expand_dims(target, axis=-1), axis=-1)
             delta = self.learning_rate * (target - output_preds) * logits
-            # context_index = jnp.squeeze(context_index, axis=-1)
-            # delta = jax.ops.segment_sum(data=delta, segment_ids=context_index, num_segments=(1 << self.context_map_size))
-            # self.params['weights'] += delta
-            # params['weights'] = jax.ops.index_add(params['weights'], contexts, delta)
 
-            # context_index = jnp.expand_dims(context_index, axis=3)
-            # delta = jnp.expand_dims(delta, axis=3)
-            context_index = jnp.concatenate([context_index, jnp.tile(jnp.expand_dims(jnp.expand_dims(jnp.arange(self.size), axis=1), axis=0), (logits.shape[0], 1, 1))], axis=2)
-
-            # delta = jnp.expand_dims(delta, axis=1)
             if self.classes is None:
                 dims = lax.ScatterDimensionNumbers(
-                    # (2,)
                     update_window_dims=(2,), inserted_window_dims=(0, 1),
                     scatter_dims_to_operand_dims=(0, 1)
                 )
             else:
                 dims = lax.ScatterDimensionNumbers(
-                    update_window_dims=(1, 2), inserted_window_dims=(),
-                    scatter_dims_to_operand_dims=(0, 3)
+                    update_window_dims=(3,), inserted_window_dims=(0, 1, 2),
+                    scatter_dims_to_operand_dims=(0, 1, 2)
                 )
-            self.params['weights'] = lax.scatter_add(
-                operand=self.params['weights'], scatter_indices=context_index, updates=delta,
-                dimension_numbers=dims
-            )
-            # if self.weight_clipping is None:
-            #     self.weights.scatter_nd_add(indices=neuron_context_index, updates=delta)
-            # else:
-            #     weights = tf.clip_by_value(
-            #         weights + delta, clip_value_min=-self.weight_clipping,
-            #         clip_value_max=self.weight_clipping
-            #     )
-            #     self.weights.scatter_nd_update(indices=neuron_context_index, updates=weights)
 
-            if self.weight_clipping is not None:
-                self.params['weights'] = jnp.clip(
-                    self.params['weights'], a_min=-self.weight_clipping, a_max=self.weight_clipping
+            if self.weight_clipping is None:
+                self.params['weights'] = lax.scatter_add(
+                    operand=self.params['weights'], scatter_indices=context_index, updates=delta,
+                    dimension_numbers=dims
+                )
+            else:
+                weights = jnp.clip(
+                    weights + delta, a_min=-self.weight_clipping, a_max=self.weight_clipping
+                )
+                self.params['weights'] = lax.scatter(
+                    operand=self.params['weights'], scatter_indices=context_index, updates=weights,
+                    dimension_numbers=dims
                 )
 
         return jnp.squeeze(output_logits, axis=-1)
@@ -197,7 +212,6 @@ class GLN(OnlineUpdateModule):
             ))
             logits_size = size
 
-    def initialize(self):
         self.params = dict()
         self.params['rng'] = jnr.PRNGKey(seed=self.seed)
 
@@ -220,35 +234,46 @@ class GLN(OnlineUpdateModule):
             self.params[f'layer{n}'] = layer.initialize(rng=rng)
 
         # JAX-compiled predict function
-        # @jax.jit
+        @jax.jit
         def _jax_predict(params, input):
+            assert self.params is None
             self.params = params
             for n, layer in enumerate(self.layers):
                 layer.params = self.params[f'layer{n}']
-            return self._predict(input)
+            prediction = self._predict(input)
+            self.params = None
+            for n, layer in enumerate(self.layers):
+                layer.params = None
+            return prediction
 
         # JAX-compiled update function
-        # @jax.jit
+        @jax.jit
         def _jax_update(params, input, target):
+            assert self.params is None
             self.params = params
             for n, layer in enumerate(self.layers):
                 layer.params = self.params[f'layer{n}']
             prediction = self._predict(input, target)
+            params = self.params
+            self.params = None
             for n, layer in enumerate(self.layers):
-                self.params[f'layer{n}'] = layer.params
-            return self.params, prediction
+                params[f'layer{n}'] = layer.params
+                layer.params = None
+            return params, prediction
 
         self._jax_predict = _jax_predict
         self._jax_update = _jax_update
 
     def predict(self, input, target=None):
-        params = dict(self.params)
+        params = self.params
+        self.params = None
         if target is None:  # predict
-            pred = self._jax_predict(params=params, input=input)
+            prediction = self._jax_predict(params=params, input=input)
         else:  # predict with online update
-            params, pred = self._jax_update(params=params, input=input, target=target)
-        self.params = dict(params)
-        return pred
+            params, prediction = self._jax_update(params=params, input=input, target=target)
+        assert self.params is None
+        self.params = params
+        return prediction
 
     def _predict(self, input, target=None):
         # Base predictions
@@ -283,102 +308,87 @@ class GLN(OnlineUpdateModule):
         else:
             return jnp.argmax(logits, axis=1)
 
+    def evaluate(self, inputs, targets, batch_size):
+        assert inputs.shape[0] % batch_size == 0
 
-# # @functools.partial(jax.jit, static_argnums=(4,))
-# def evaluate(model, params, inputs, targets, batch_size):
-#     assert inputs.shape[0] % batch_size == 0
+        inputs = jnp.asarray(inputs)
+        targets = jnp.asarray(targets)
+        num_instances = inputs.shape[0]
 
-#     inputs = jnp.asarray(inputs)
-#     targets = jnp.asarray(targets)
-#     num_instances = inputs.shape[0]
+        params = self.params
+        self.params = None
 
-#     output = model.predict(params=params, input=inputs[:batch_size])
-#     for n in range(1, num_instances // batch_size):
-#         x = model.predict(params=params, input=inputs[n * batch_size: (n + 1) * batch_size])
-#         output = jnp.concatenate((output, x), axis=0)
+        @jax.jit
+        def body(n, num_correct):
+            # jnp.arange not working here
+            # batch = jnp.arange(n * batch_size, (n + 1) * batch_size)
+            batch = jnp.linspace(n * batch_size, (n + 1) * batch_size, batch_size, dtype=int)
+            batch = batch % num_instances
+            prediction = self._jax_predict(params=params, input=inputs[batch])
+            num_correct += jnp.count_nonzero(prediction == targets[batch])
+            return num_correct
 
-#     @jax.jit
-#     def body_fn(n, accuracy):
-#         start = n * batch_size
-#         stop = (n + 1) * batch_size
-#         try:
-#             batch = jnp.arange(start, stop) % num_instances
-#         except BaseException:
-#             print('jnp.arange still not working!')
-#             batch = jnp.linspace(start, stop, num=batch_size, dtype=int)
-#         prediction = model.predict(params=params, input=inputs[batch])
-#         accuracy += jnp.count_nonzero(prediction == targets[batch])
-#         return accuracy
+        num_iterations = num_instances // batch_size
+        num_correct = lax.fori_loop(lower=0, upper=num_iterations, body_fun=body, init_val=0)
 
-#     num_iterations = num_instances // batch_size
-#     accuracy = lax.fori_loop(lower=0, upper=num_iterations, body_fun=body_fn, init_val=0.0)
-#     return accuracy / num_iterations
+        assert self.params is None
+        self.params = params
 
+        return num_correct / num_instances
 
-# # @functools.partial(jax.jit, static_argnums=(4,))
-# def train(model, params, inputs, targets, batch_size, num_iterations=None, num_epochs=None):
-#     assert (num_iterations is None) is not (num_epochs is None)
-#     assert inputs.shape[0] % batch_size == 0
+    def train(self, inputs, targets, batch_size, num_iterations=None, num_epochs=None):
+        assert (num_iterations is None) is not (num_epochs is None)
+        assert inputs.shape[0] % batch_size == 0
 
-#     inputs = jnp.asarray(inputs)
-#     targets = jnp.asarray(targets)
-#     num_instances = inputs.shape[0]
+        inputs = jnp.asarray(inputs)
+        targets = jnp.asarray(targets)
+        num_instances = inputs.shape[0]
 
-#     @jax.jit
-#     def body_fn(n, args):
-#         params, loss = args
-#         if num_epochs is None:
-#             params['rng'], rng = jnr.split(key=params.pop('rng'), num=2)
-#             batch = jnr.randint(key=rng, shape=(batch_size,), minval=0, maxval=num_instances)
-#         else:
-#             start = n * batch_size
-#             stop = (n + 1) * batch_size
-#             try:
-#                 batch = jnp.arange(start, stop) % num_instances
-#             except BaseException:
-#                 print('jnp.arange still not working!')
-#                 batch = jnp.linspace(start, stop, num=batch_size, dtype=int)
-#         params, _loss = model.update(params=params, input=inputs[batch], target=targets[batch])
-#         loss = 0.9 * loss + 0.1 * _loss
-#         return params, loss
+        @jax.jit
+        def body(n, params):
+            if num_epochs is None:
+                params['rng'], rng = jnr.split(key=params.pop('rng'), num=2)
+                batch = jnr.randint(key=rng, shape=(batch_size,), minval=0, maxval=num_instances)
+            else:
+                # jnp.arange not working here
+                # batch = jnp.arange(n * batch_size, (n + 1) * batch_size)
+                batch = jnp.linspace(n * batch_size, (n + 1) * batch_size, batch_size, dtype=int)
+                batch = batch % num_instances
+            params, _ = self._jax_update(params=params, input=inputs[batch], target=targets[batch])
+            return params
 
-#     if num_epochs is not None:
-#         num_iterations = num_instances // batch_size
-#     params, loss = lax.fori_loop(
-#         lower=0, upper=num_iterations, body_fun=body_fn, init_val=(params, 0.0)
-#     )
-#     return params, loss
+        params = self.params
+        self.params = None
+
+        if num_epochs is not None:
+            num_iterations = num_instances // batch_size
+        params = lax.fori_loop(lower=0, upper=num_iterations, body_fun=body, init_val=params)
+
+        assert self.params is None
+        self.params = params
 
 
 def main():
-    import numpy as np
     import time
     from test_mnist import get_mnist_numpy
 
     train_images, train_labels, test_images, test_labels = get_mnist_numpy()
 
-    train_labels = train_labels == 1
-    test_labels = test_labels == 1
-
     model = GLN(
         layer_sizes=[4, 4, 1], input_size=train_images.shape[1], context_map_size=4,
-        learning_rate=1e-3, pred_clipping=0.05, weight_clipping=5.0, classes=None, base_preds=4
+        learning_rate=1e-3, pred_clipping=0.05, weight_clipping=5.0, classes=10, base_preds=None
     )
-
-    model.initialize()
 
     count_weights = (lambda count, x: count + x.size if isinstance(x, jnp.ndarray) else count)
     print('Weights:', jax.tree_util.tree_reduce(count_weights, model.params, initializer=0))
 
-    print('Accuracy:', np.count_nonzero(model.predict(test_images) == test_labels) / test_labels.shape[0])
+    print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
+
     start = time.time()
-    batch_size = 10
-    for n in range(100):  # train_labels.shape[0] // batch_size
-        input = train_images[n * batch_size: (n + 1) * batch_size]
-        target = train_labels[n * batch_size: (n + 1) * batch_size]
-        model.predict(input, target)
+    model.train(train_images, train_labels, batch_size=10, num_epochs=1)
     print('Time:', time.time() - start)
-    print('Accuracy:', np.count_nonzero(model.predict(test_images) == test_labels) / test_labels.shape[0])
+
+    print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ jaxlib
 numpy
 pandas
 scikit-learn
+scipy == 1.4.1
 tensorflow
 torch
 torchvision

@@ -91,9 +91,10 @@ class Linear(OnlineUpdateModule):
             context = tf.expand_dims(context, axis=1)
 
         if self.context_bias is None:
-            context_index = tf.math.reduce_sum(self.context_maps * context, axis=-1) > 0.0
+            context_bias = 0.0
         else:
-            context_index = tf.math.reduce_sum(self.context_maps * context, axis=-1) > self.context_bias
+            context_bias = self.context_bias
+        context_index = tf.math.reduce_sum(self.context_maps * context, axis=-1) > context_bias
 
         if self.classes is None:
             context_map_values = tf.constant([[[1 << n for n in range(self.context_map_size)]]])
@@ -260,31 +261,75 @@ class GLN(OnlineUpdateModule):
         else:
             return tf.math.argmax(logits, axis=1)
 
+    def evaluate(self, inputs, targets, batch_size):
+        assert inputs.shape[0] % batch_size == 0
+
+        inputs = tf.convert_to_tensor(inputs, dtype=tf.dtypes.float32)
+        targets = tf.convert_to_tensor(targets, dtype=self.target_dtype)
+        num_instances = inputs.shape[0]
+
+        @tf.function
+        def body(n, num_correct):
+            batch = tf.range(n * batch_size, (n + 1) * batch_size) % num_instances
+            prediction = self._tf_predict(input=tf.gather(inputs, batch))
+            num_correct += tf.math.count_nonzero(prediction == tf.gather(targets, batch))
+            return n + 1, num_correct
+
+        @tf.function
+        def cond(n, accuracy):
+            return True
+
+        num_iterations = num_instances // batch_size
+        _, num_correct = tf.while_loop(
+            cond=cond, body=body, loop_vars=(0, 0), maximum_iterations=num_iterations
+        )
+        return num_correct.numpy() / num_instances
+
+    def train(self, inputs, targets, batch_size, num_iterations=None, num_epochs=None):
+        assert (num_iterations is None) is not (num_epochs is None)
+        assert inputs.shape[0] % batch_size == 0
+
+        inputs = tf.convert_to_tensor(inputs, dtype=tf.dtypes.float32)
+        targets = tf.convert_to_tensor(targets, dtype=self.target_dtype)
+        num_instances = inputs.shape[0]
+
+        @tf.function
+        def body(n):
+            if num_epochs is None:
+                batch = tf.random.uniform(batch_size, maxval=num_instances, dtype=tf.dtypes.int64)
+            else:
+                batch = tf.range(n * batch_size, (n + 1) * batch_size) % num_instances
+            self._tf_update(input=tf.gather(inputs, batch), target=tf.gather(targets, batch))
+            return (n + 1,)
+
+        @tf.function
+        def cond(n):
+            return True
+
+        if num_epochs is not None:
+            num_iterations = num_instances // batch_size
+        n, = tf.while_loop(cond=cond, body=body, loop_vars=(0,), maximum_iterations=num_iterations)
+        assert n.numpy().item() == num_iterations, (n, num_iterations)
+
 
 def main():
-    import numpy as np
     import time
     from test_mnist import get_mnist_numpy
 
     train_images, train_labels, test_images, test_labels = get_mnist_numpy()
-
-    # train_labels = train_labels == 1
-    # test_labels = test_labels == 1
 
     model = GLN(
         layer_sizes=[4, 4, 1], input_size=train_images.shape[1], context_map_size=4,
         learning_rate=1e-3, pred_clipping=0.05, weight_clipping=5.0, classes=10, base_preds=None
     )
 
-    print('Accuracy:', np.count_nonzero(model.predict(test_images) == test_labels) / test_labels.shape[0])
+    print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
+
     start = time.time()
-    batch_size = 10
-    for n in range(train_labels.shape[0] // batch_size):
-        input = train_images[n * batch_size: (n + 1) * batch_size]
-        target = train_labels[n * batch_size: (n + 1) * batch_size]
-        model.predict(input, target)
+    model.train(train_images, train_labels, batch_size=10, num_epochs=1)
     print('Time:', time.time() - start)
-    print('Accuracy:', np.count_nonzero(model.predict(test_images) == test_labels) / test_labels.shape[0])
+
+    print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
 
 
 if __name__ == '__main__':
