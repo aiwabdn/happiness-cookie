@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import label_binarize
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
-
 from scipy.ndimage import interpolation
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+from sklearn.preprocessing import label_binarize
 
 
 def moments(image):
@@ -67,6 +66,7 @@ def shuffle_data(X, y):
 def get_mnist_metrics(model,
                       mnist_class=0,
                       batch_size=1,
+                      deskewed=True,
                       data_transform=None,
                       result_transform=None):
     from tqdm import tqdm
@@ -78,7 +78,7 @@ def get_mnist_metrics(model,
         result_transform = lambda x: x
 
     # get MNIST data as numpy arrays
-    X_train, y_train, X_test, y_test = get_mnist()
+    X_train, y_train, X_test, y_test = get_mnist(deskewed)
     # randomly shuffle data
     X_train, y_train = shuffle_data(X_train, y_train)
     X_test, y_test = shuffle_data(X_test, y_test)
@@ -89,7 +89,7 @@ def get_mnist_metrics(model,
     num_batches = int(np.ceil(len(X_train) / batch_size))
     for i in tqdm(range(num_batches)):
         # set learning rate
-        model.set_learning_rate(min(100 / (i + 1), 0.1))
+        model.set_learning_rate(min(5500 / (i + 1), 0.04))
 
         # get batch
         batch_start = i * batch_size
@@ -118,7 +118,7 @@ def get_mnist_metrics(model,
         outputs = np.hstack(outputs)
 
     # define metrics
-    classes = np.unique(y_train)
+    classes = np.unique(result_transform(y_train))
     y_true_bin = label_binarize(y_test, classes=classes).T
     outputs_bin = (outputs > 0.5).astype(int)
     bin_acc = np.sum(outputs_bin == y_true_bin) / np.prod(y_true_bin.shape)

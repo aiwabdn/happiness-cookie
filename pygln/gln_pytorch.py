@@ -1,9 +1,10 @@
 # %%
+from typing import Callable, Optional, Sequence, Union
+
 import numpy as np
 import torch
-from torch import nn
-from typing import Callable, Optional, Sequence, Union
 from sklearn.preprocessing import label_binarize
+from torch import nn
 
 if torch.cuda.is_available():
     DEVICE = 'cuda'
@@ -188,8 +189,10 @@ class Linear(nn.Module):
             bias = False
 
         if bias:
-            self._bias = torch.empty(1).uniform_(
-                logit(self._output_clipping), logit(1 - self._output_clipping))
+            self._bias = torch.empty(
+                (self.num_classes,
+                 1)).uniform_(logit(self._output_clipping),
+                              logit(1 - self._output_clipping))
         else:
             self._bias = None
 
@@ -246,12 +249,6 @@ class Linear(nn.Module):
                                     min=logit(self._output_clipping),
                                     max=logit(1 - self._output_clipping))
 
-        # if not final layer
-        if self._bias is not None:
-            # assign output of first neuron to bias
-            # done for ease of computation
-            output_logits[0] = self._bias
-
         if targets is not None:
             sigmoids = torch.sigmoid(output_logits)
             # compute update
@@ -269,6 +266,12 @@ class Linear(nn.Module):
                              reshape(1, -1, 1), current_context_indices, :] -
                     update_values.permute(0, 1, 3, 2), -self._weight_clipping,
                     self._weight_clipping)
+
+        # if not final layer
+        if self._bias is not None:
+            # assign output of first neuron to bias
+            # done for ease of computation
+            output_logits[:, 0] = self._bias
 
         return output_logits
 
@@ -318,7 +321,8 @@ class GLN(nn.Module):
     def predict(self, inputs, context_inputs, targets=None):
         if targets is not None:
             targets = torch.Tensor(
-                label_binarize(targets, classes=self.classes).T)
+                label_binarize(targets.cpu().numpy(),
+                               classes=self.classes).T).to(DEVICE)
         if callable(self.base_predictor):
             out = self.base_predictor(inputs)
         else:
@@ -332,14 +336,15 @@ class GLN(nn.Module):
 # %%
 if __name__ == '__main__':
     from datasets import get_mnist_metrics
-    m = GLN(layer_sizes=[4, 4, 1],
+    m = GLN(layer_sizes=[128, 128, 128, 32, 1],
             input_size=784,
             context_size=784,
             classes=range(10),
-            layer_bias=True,
+            layer_bias=False,
             base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01).to(DEVICE)
+    m = m.to(DEVICE)
     acc, conf_mat, prfs = get_mnist_metrics(m,
-                                            batch_size=8,
+                                            batch_size=1,
                                             data_transform=data_transform,
                                             result_transform=result_transform)
     print('Accuracy:', acc)

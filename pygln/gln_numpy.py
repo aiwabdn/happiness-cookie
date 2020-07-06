@@ -1,5 +1,5 @@
 # %%
-from typing import Sequence, Optional, Callable, Union
+from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 from scipy.special import logit
@@ -253,7 +253,7 @@ class GLN():
 # %%
 if __name__ == '__main__':
     from datasets import get_mnist_metrics
-    m = GLN(layer_sizes=[32, 32, 1],
+    m = GLN(layer_sizes=[4, 4, 1],
             input_size=784,
             context_size=784,
             classes=range(10),
