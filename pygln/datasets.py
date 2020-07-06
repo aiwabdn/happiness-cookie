@@ -3,16 +3,56 @@ import pandas as pd
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
+from scipy.ndimage import interpolation
+
+
+def moments(image):
+    c0, c1 = np.mgrid[:image.shape[0], :
+                      image.shape[1]]  # A trick in numPy to create a mesh grid
+    totalImage = np.sum(image)  #sum of pixels
+    m0 = np.sum(c0 * image) / totalImage  #mu_x
+    m1 = np.sum(c1 * image) / totalImage  #mu_y
+    m00 = np.sum((c0 - m0)**2 * image) / totalImage  #var(x)
+    m11 = np.sum((c1 - m1)**2 * image) / totalImage  #var(y)
+    m01 = np.sum((c0 - m0) * (c1 - m1) * image) / totalImage  #covariance(x,y)
+    mu_vector = np.array([m0, m1
+                          ])  # Notice that these are \mu_x, \mu_y respectively
+    covariance_matrix = np.array(
+        [[m00, m01],
+         [m01, m11]])  # Do you see a similarity between the covariance matrix
+    return mu_vector, covariance_matrix
+
+
+def deskew(image):
+    c, v = moments(image)
+    alpha = v[0, 1] / v[0, 0]
+    affine = np.array([[1, 0], [alpha, 1]])
+    ocenter = np.array(image.shape) / 2.0
+    offset = c - np.dot(affine, ocenter)
+    return interpolation.affine_transform(image, affine, offset=offset)
+
+
+def deskewAll(X):
+    currents = []
+    for i in range(len(X)):
+        currents.append(deskew(X[i].reshape(28, 28)).flatten())
+    return np.array(currents)
+
 
 def get_mnist():
     from torchvision.datasets import MNIST
 
     trainset = MNIST('./data', train=True, download=True)
     X_train = trainset.data.numpy().reshape(60000, -1).astype(np.float) / 255
+    X_train = deskewAll(X_train)
+    # m = X_train.mean(axis=0)
+    # X_train = X_train - m
     y_train = trainset.targets.numpy()
 
     testset = MNIST('./data', train=False, download=True)
     X_test = testset.data.numpy().reshape(10000, -1).astype(np.float) / 255
+    X_test = deskewAll(X_test)
+    # X_test -= m
     y_test = testset.targets.numpy()
 
     return X_train, y_train, X_test, y_test
@@ -39,7 +79,7 @@ def get_mnist_metrics(model,
         result_transform = lambda x: x
 
     # get MNIST data as numpy arrays
-    X_train, y_train, X_test, y_test = get_mnist_numpy()
+    X_train, y_train, X_test, y_test = get_mnist()
     # randomly shuffle data
     X_train, y_train = shuffle_data(X_train, y_train)
     X_test, y_test = shuffle_data(X_test, y_test)
@@ -50,7 +90,7 @@ def get_mnist_metrics(model,
     num_batches = int(np.ceil(len(X_train) / batch_size))
     for i in tqdm(range(num_batches)):
         # set learning rate
-        model.set_learning_rate(min(100 / (i + 1), 0.01))
+        model.set_learning_rate(min(100 / (i + 1), 0.1))
 
         # get batch
         batch_start = i * batch_size
@@ -78,15 +118,14 @@ def get_mnist_metrics(model,
     else:
         outputs = np.hstack(outputs)
 
-    # threshold outputs
-    outputs = (outputs > 0.5).astype(np.int)
-
     # define metrics
     classes = np.unique(y_train)
     y_true_bin = label_binarize(y_test, classes=classes).T
-    bin_acc = np.sum(outputs == y_true_bin) / np.prod(y_true_bin.shape)
+    outputs_bin = (outputs > 0.5).astype(int)
+    bin_acc = np.sum(outputs_bin == y_true_bin) / np.prod(y_true_bin.shape)
     print('overall binary accuracy', bin_acc)
-    per_class_acc = (outputs == y_true_bin).sum(axis=1) / y_true_bin.shape[1]
+    per_class_acc = (outputs_bin == y_true_bin).sum(
+        axis=1) / y_true_bin.shape[1]
     print('per class accuracy', per_class_acc)
     print('average per class accuracy', np.mean(per_class_acc))
 

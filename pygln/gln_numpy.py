@@ -180,21 +180,11 @@ class Linear():
                                                                  axis2=-1),
             logit(self._output_clipping), logit(1 - self._output_clipping))
 
-        # print(logits.shape)
-        # print(output_logits.shape)
-        # print(self._bias)
-        # print(output_logits)
-        if self._bias is not None:
-            output_logits.setflags(write=1)
-            output_logits[:, 0] = self._bias
-
         if targets is not None:
             sigmoids = sigmoid(output_logits)
             diff = sigmoids - np.expand_dims(targets, axis=1)
             update_value = self.learning_rate * np.expand_dims(diff,
                                                                axis=2) * logits
-            # print(update_value.shape)
-            # print('--')
             self._weights[
                 np.arange(self.num_classes).reshape(-1, 1, 1),
                 np.arange(self.size).
@@ -205,6 +195,10 @@ class Linear():
                              reshape(1, -1, 1), current_context_indices, :] -
                     np.transpose(update_value, (0, 1, 3, 2)),
                     -self._weight_clipping, self._weight_clipping)
+
+        if self._bias is not None:
+            output_logits.setflags(write=1)
+            output_logits[:, 0] = self._bias
 
         return output_logits
 
@@ -257,62 +251,15 @@ class GLN():
 
 
 # %%
-l = Linear(4, 784, 784, num_classes=10)
-x = np.random.normal(size=(784, 2))
-y = label_binarize([0, 1], classes=range(10)).T
-
-# %%
-sigmoid(l.predict(x, x, y))
-
-# %%
 if __name__ == '__main__':
     from datasets import get_mnist_metrics
-    m = GLN(layer_sizes=[128, 128, 128, 1],
+    m = GLN(layer_sizes=[32, 32, 1],
             input_size=784,
             context_size=784,
             classes=range(10),
-            layer_bias=False)
+            layer_bias=False,
+            base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
-
-    # %%
-    from datasets import get_mnist_numpy, shuffle_data
-    from tqdm import tqdm
-    idx = 1
-    xt, yt, xtt, ytt = get_mnist_numpy()
-    yt[yt >= idx] = idx
-    # yt[yt == idx] = 1
-    ytt[ytt >= idx] = idx
-    # ytt[ytt == idx] = 1
-    yt = 1 - yt
-    ytt = 1 - ytt
-    xt, yt = shuffle_data(xt, yt)
-    xtt, ytt = shuffle_data(xtt, ytt)
-
-    m = GLN(layer_sizes=[4, 4, 1],
-            input_size=784,
-            context_size=784,
-            classes=np.unique(ytt),
-            learning_rate=0.001)
-
-    batch_size = 1
-    for i in tqdm(range(0, len(xt), batch_size)):
-        x = xt[i * batch_size:(i + 1) * batch_size].T
-        y = yt[i * batch_size:(i + 1) * batch_size]
-        out = m.predict(x, x, y)
-
-    # %%
-    preds = []
-    for i in tqdm(range(0, len(xtt), batch_size)):
-        x = xtt[i * batch_size:(i + 1) * batch_size].T
-        y = ytt[i * batch_size:(i + 1) * batch_size]
-        out = m.predict(x, x)
-        preds.append(out)
-
-    # %%
-    # preds = (np.stack(preds).flatten() > 0.5).astype(int)
-    # preds = np.hstack(preds).reshape(-1, idx + 1).argmax(axis=1)
-    preds = (np.array(preds) > 0.5).astype(int)
-    print('acc', sum(np.array(preds) == ytt) / len(ytt))
