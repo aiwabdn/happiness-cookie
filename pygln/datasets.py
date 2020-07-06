@@ -39,20 +39,19 @@ def deskewAll(X):
     return np.array(currents)
 
 
-def get_mnist():
+def get_mnist(deskewed=True):
     from torchvision.datasets import MNIST
 
     trainset = MNIST('./data', train=True, download=True)
     X_train = trainset.data.numpy().reshape(60000, -1).astype(np.float) / 255
-    X_train = deskewAll(X_train)
-    # m = X_train.mean(axis=0)
-    # X_train = X_train - m
+    if deskewed:
+        X_train = deskewAll(X_train)
     y_train = trainset.targets.numpy()
 
     testset = MNIST('./data', train=False, download=True)
     X_test = testset.data.numpy().reshape(10000, -1).astype(np.float) / 255
-    X_test = deskewAll(X_test)
-    # X_test -= m
+    if deskewed:
+        X_test = deskewAll(X_test)
     y_test = testset.targets.numpy()
 
     return X_train, y_train, X_test, y_test
