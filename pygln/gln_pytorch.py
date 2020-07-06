@@ -2,9 +2,8 @@
 import numpy as np
 import torch
 from torch import nn
-from typing import Callable, Optional, Sequence
-
-from pygln.datasets import get_mnist_metrics
+from typing import Callable, Optional, Sequence, Union
+from sklearn.preprocessing import label_binarize
 
 if torch.cuda.is_available():
     DEVICE = 'cuda'
@@ -169,10 +168,18 @@ class Linear(nn.Module):
                  learning_rate: float = 0.01,
                  pred_clipping: float = 0.01,
                  weight_clipping: float = 5,
-                 bias: bool = True):
+                 bias: bool = True,
+                 num_classes: int = 2):
         super(Linear, self).__init__()
 
+        self.num_classes = num_classes
         self.size = size
+
+        if num_classes < 2:
+            raise ValueError("Number of classes need to be at least 2")
+        elif num_classes == 2:
+            self.num_classes = 1
+
         # clipping value for outputs of neurons
         self._output_clipping = torch.tensor(pred_clipping)
         # clipping value for weights of layer
@@ -188,22 +195,24 @@ class Linear(nn.Module):
 
         # context function for halfspace gating
         self._context_maps = nn.Parameter(torch.as_tensor(
-            np.random.normal(size=(size, context_map_size, context_size))),
+            np.random.normal(size=(self.num_classes, size, context_map_size,
+                                   context_size))),
                                           requires_grad=False)
         # scale by norm
         self._context_maps /= torch.norm(self._context_maps,
-                                         dim=2,
+                                         dim=-1,
                                          keepdim=True)
         # constant values for halfspace gating
         self._context_bias = nn.Parameter(torch.as_tensor(
-            np.random.normal(size=(size, context_map_size, 1))),
+            np.random.normal(size=(self.num_classes, size, context_map_size,
+                                   1))),
                                           requires_grad=False)
         # array to convert mapped_context_binary context to index
         self._boolean_converter = nn.Parameter(torch.as_tensor(
             np.array([[2**i] for i in range(context_map_size)])),
                                                requires_grad=False)
         # weights for the whole layer
-        self._weights = nn.Parameter(torch.full(size=(size,
+        self._weights = nn.Parameter(torch.full(size=(self.num_classes, size,
                                                       2**context_map_size,
                                                       input_size),
                                                 fill_value=1 / input_size,
@@ -220,17 +229,20 @@ class Linear(nn.Module):
         mapped_context_binary = (distances > self._context_bias).int()
         current_context_indices = torch.sum(mapped_context_binary *
                                             self._boolean_converter,
-                                            dim=1)
+                                            dim=-2)
 
         # select all context across all neurons in layer
-        current_selected_weights = self._weights[torch.arange(
-            self.size).reshape(-1, 1), current_context_indices, :]
+        current_selected_weights = self._weights[
+            torch.arange(self.num_classes).reshape(-1, 1, 1),
+            torch.arange(self.size).reshape(1, -1, 1
+                                            ), current_context_indices, :]
 
         # compute logit output
         # matmul duplicates results, so take diagonal
+        logits = torch.unsqueeze(logits, dim=-3)
         output_logits = torch.clamp(torch.matmul(current_selected_weights,
-                                                 logits).diagonal(dim1=1,
-                                                                  dim2=2),
+                                                 logits).diagonal(dim1=-2,
+                                                                  dim2=-1),
                                     min=logit(self._output_clipping),
                                     max=logit(1 - self._output_clipping))
 
@@ -243,17 +255,22 @@ class Linear(nn.Module):
         if targets is not None:
             sigmoids = torch.sigmoid(output_logits)
             # compute update
+            diff = sigmoids - torch.unsqueeze(targets, dim=1)
             update_values = self.learning_rate * torch.unsqueeze(
-                (sigmoids - targets), dim=1) * logits
+                diff, dim=2) * logits
             # update selected weights and clip
-            self._weights[torch.arange(self.size).reshape(
-                -1, 1), current_context_indices, :] = torch.clamp(
-                    self._weights[torch.arange(self.size).
-                                  reshape(-1, 1), current_context_indices, :] -
-                    update_values.permute(0, 2, 1), -self._weight_clipping,
+            self._weights[
+                torch.arange(self.num_classes).reshape(-1, 1, 1),
+                torch.arange(self.size).
+                reshape(1, -1, 1), current_context_indices, :] = torch.clamp(
+                    self.
+                    _weights[torch.arange(self.num_classes).reshape(-1, 1, 1),
+                             torch.arange(self.size).
+                             reshape(1, -1, 1), current_context_indices, :] -
+                    update_values.permute(0, 1, 3, 2), -self._weight_clipping,
                     self._weight_clipping)
 
-        return torch.squeeze(output_logits)
+        return output_logits
 
     def extra_repr(self):
         return 'input_size={}, neurons={}, context_map_size={}, bias={}'.format(
@@ -266,6 +283,7 @@ class GLN(nn.Module):
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_size: int,
+                 classes: Sequence[Union[int, str]] = [0, 1],
                  base_predictor: Optional[
                      Callable[[torch.Tensor], torch.Tensor]] = None,
                  context_map_size: int = 4,
@@ -275,17 +293,19 @@ class GLN(nn.Module):
                  weight_clipping: float = 5.0):
         super(GLN, self).__init__()
 
+        self.classes = classes
+        self.num_classes = len(classes)
         self.base_predictor = base_predictor
         self.layers = []
         for idx, size in enumerate(layer_sizes):
             if idx == 0:
                 layer = Linear(size, input_size, context_size,
                                context_map_size, learning_rate, pred_clipping,
-                               weight_clipping, layer_bias)
+                               weight_clipping, layer_bias, self.num_classes)
             else:
                 layer = Linear(size, layer_sizes[idx - 1], context_size,
                                context_map_size, learning_rate, pred_clipping,
-                               weight_clipping, layer_bias)
+                               weight_clipping, layer_bias, self.num_classes)
             self.layers.append(layer)
 
         self.layers = nn.ModuleList(self.layers)
@@ -296,6 +316,9 @@ class GLN(nn.Module):
             l.set_learning_rate(lr)
 
     def predict(self, inputs, context_inputs, targets=None):
+        if targets is not None:
+            targets = torch.Tensor(
+                label_binarize(targets, classes=self.classes).T)
         if callable(self.base_predictor):
             out = self.base_predictor(inputs)
         else:
@@ -303,14 +326,19 @@ class GLN(nn.Module):
         for l in self.layers:
             out = l.predict(out, context_inputs, targets)
 
-        return torch.sigmoid(out)
+        return torch.squeeze(torch.sigmoid(out))
 
 
 # %%
 if __name__ == '__main__':
-    m = GLN([4, 4, 1], 784, 784).to(DEVICE)
+    from datasets import get_mnist_metrics
+    m = GLN(layer_sizes=[4, 4, 1],
+            input_size=784,
+            context_size=784,
+            classes=range(10),
+            layer_bias=True,
+            base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01).to(DEVICE)
     acc, conf_mat, prfs = get_mnist_metrics(m,
-                                            mnist_class=3,
                                             batch_size=8,
                                             data_transform=data_transform,
                                             result_transform=result_transform)
