@@ -1,6 +1,10 @@
 import jax
 from jax import lax, nn as jnn, numpy as jnp, random as jnr, scipy as jsp
-from typing import Sequence
+from numpy import ndarray
+from random import randrange
+from typing import Callable, Optional, Sequence, Union
+
+from base import GLNBase
 
 
 jax.config.update("jax_debug_nans", True)
@@ -8,38 +12,79 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_numpy_rank_promotion", "raise")
 
 
+class DynamicParameter(object):
+
+    def initialize(self):
+        return 0.0
+
+    def value(self, step):
+        return step + 1.0
+
+
+class ConstantParameter(DynamicParameter):
+
+    def __init__(self, constant_value):
+        DynamicParameter.__init__(self)
+
+        assert isinstance(constant_value, float)
+        self.constant_value = constant_value
+
+    def value(self, step):
+        return super().value(step), self.constant_value
+
+
+class PaperLearningRate(DynamicParameter):
+
+    def value(self, step):
+        step = super().value(step)
+        return step, jnp.minimum(100.0 / step, 0.01)
+
+
 class OnlineUpdateModule(object):
 
-    def __init__(self, learning_rate: float, pred_clipping: float, weight_clipping: float):
-        assert learning_rate > 0.0
+    def __init__(
+        self,
+        learning_rate: DynamicParameter,
+        pred_clipping: float,
+        weight_clipping: float
+    ):
+        assert isinstance(learning_rate, DynamicParameter)
         assert 0.0 < pred_clipping < 1.0
-        assert weight_clipping is None or weight_clipping >= 1.0
+        assert weight_clipping >= 1.0
 
         self.learning_rate = learning_rate
         self.pred_clipping = pred_clipping
         self.weight_clipping = weight_clipping
 
     def initialize(self, rng):
-        # return params
-        raise NotImplementedError()
+        params = dict()
+        params['lr_step'] = self.learning_rate.initialize()
+        return params
 
-    def predict(self, logits, context, target=None):
-        # return logits
+    def predict(self, params, logits, context, target=None):
         raise NotImplementedError()
 
 
 class Linear(OnlineUpdateModule):
 
     def __init__(
-        self, size: int, input_size: int, context_size: int, context_map_size: int,
-        learning_rate: float, pred_clipping: float, weight_clipping: float,
-        classes: int = None, bias: bool = True, context_bias: bool = True
+        self,
+        size: int,
+        input_size: int,
+        context_size: int,
+        context_map_size: int,
+        classes: int,
+        learning_rate: DynamicParameter,
+        pred_clipping: float,
+        weight_clipping: float,
+        bias: bool,
+        context_bias: bool
     ):
         super().__init__(learning_rate, pred_clipping, weight_clipping)
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert classes is None or classes >= 2
+        assert classes >= 1
 
         self.size = size
         self.input_size = input_size
@@ -50,91 +95,62 @@ class Linear(OnlineUpdateModule):
         self.context_bias = context_bias
 
     def initialize(self, rng):
+        rng, rng1 = jnr.split(key=rng, num=2)
+        params = super().initialize(rng=rng1)
+
         logits_size = self.input_size + int(self.bias)
         num_context_indices = 1 << self.context_map_size
-        if self.classes is None:
-            context_maps_shape = (1, self.size, self.context_map_size, self.context_size)
-            context_bias_shape = (1, self.size, self.context_map_size)
-            weights_shape = (self.size, num_context_indices, logits_size)
-            bias_shape = (1, 1)
-        else:
-            context_maps_shape = (
-                1, self.classes, self.size, self.context_map_size, self.context_size
-            )
-            context_bias_shape = (1, self.classes, self.size, self.context_map_size)
-            weights_shape = (self.classes, self.size, num_context_indices, logits_size)
-            bias_shape = (1, self.classes, 1)
-
-        params = dict()
+        weights_shape = (self.classes, self.size, num_context_indices, logits_size)
         params['weights'] = jnp.full(shape=weights_shape, fill_value=(1.0 / logits_size))
+
         if self.bias:
             rng, rng1 = jnr.split(key=rng, num=2)
+            bias_shape = (1, self.classes, 1)
             params['bias'] = jnr.uniform(
                 key=rng1, shape=bias_shape, minval=jsp.special.logit(self.pred_clipping),
                 maxval=jsp.special.logit(1.0 - self.pred_clipping)
             )
 
+        context_maps_shape = (1, self.classes, self.size, self.context_map_size, self.context_size)
         if self.context_bias:
             rng1, rng2 = jnr.split(key=rng, num=2)
             context_maps = jnr.normal(key=rng1, shape=context_maps_shape)
             norm = jnp.linalg.norm(context_maps, axis=-1, keepdims=True)
             params['context_maps'] = context_maps / norm
+
+            context_bias_shape = (1, self.classes, self.size, self.context_map_size)
             params['context_bias'] = jnr.normal(key=rng2, shape=context_bias_shape)
+
         else:
             params['context_maps'] = jnr.normal(key=rng, shape=context_maps_shape)
 
         return params
 
-    def predict(self, logits, context, target=None):
-        context = jnp.expand_dims(jnp.expand_dims(context, axis=1), axis=1)
-        if self.classes is not None:
-            context = jnp.expand_dims(context, axis=1)
+    def predict(self, params, logits, context, target=None):
+        context = jnp.expand_dims(jnp.expand_dims(jnp.expand_dims(context, axis=1), axis=1), axis=1)
+        context_bias = params.get('context_bias', 0.0)
+        context_index = (params['context_maps'] * context).sum(axis=-1) > context_bias
 
-        if 'context_bias' in self.params:
-            context_bias = self.params['context_bias']
-        else:
-            context_bias = 0.0
-        context_index = (self.params['context_maps'] * context).sum(axis=-1) > context_bias
-
-        if self.classes is None:
-            context_map_values = jnp.asarray([[[1 << n for n in range(self.context_map_size)]]])
-        else:
-            context_map_values = jnp.asarray([[[[1 << n for n in range(self.context_map_size)]]]])
+        context_map_values = jnp.asarray([[[[1 << n for n in range(self.context_map_size)]]]])
         context_index = jnp.where(context_index, context_map_values, 0)
         context_index = context_index.sum(axis=-1, keepdims=True)
 
         batch_size = logits.shape[0]
-        if self.classes is None:
-            neuron_index = jnp.asarray([[[n] for n in range(self.size)]])
-            neuron_index = jnp.tile(neuron_index, reps=(batch_size, 1, 1))
-            context_index = jnp.concatenate([neuron_index, context_index], axis=-1)
-        else:
-            class_neuron_index = jnp.asarray(
-                [[[[c, n] for n in range(self.size)] for c in range(self.classes)]]
-            )
-            class_neuron_index = jnp.tile(class_neuron_index, reps=(batch_size, 1, 1, 1))
-            context_index = jnp.concatenate([class_neuron_index, context_index], axis=-1)
+        class_neuron_index = jnp.asarray(
+            [[[[c, n] for n in range(self.size)] for c in range(self.classes)]]
+        )
+        class_neuron_index = jnp.tile(class_neuron_index, reps=(batch_size, 1, 1, 1))
+        context_index = jnp.concatenate([class_neuron_index, context_index], axis=-1)
 
-        if self.classes is None:
-            dims = lax.GatherDimensionNumbers(
-                offset_dims=(2,), collapsed_slice_dims=(0, 1), start_index_map=(0, 1)
-            )
-            slice_sizes = (1, 1, self.input_size + int(self.bias))
-        else:
-            dims = lax.GatherDimensionNumbers(
-                offset_dims=(3,), collapsed_slice_dims=(0, 1, 2), start_index_map=(0, 1, 2)
-            )
-            slice_sizes = (1, 1, 1, self.input_size + int(self.bias))
+        dims = lax.GatherDimensionNumbers(
+            offset_dims=(3,), collapsed_slice_dims=(0, 1, 2), start_index_map=(0, 1, 2)
+        )
         weights = lax.gather(
-            operand=self.params['weights'], start_indices=context_index, dimension_numbers=dims,
-            slice_sizes=slice_sizes
+            operand=params['weights'], start_indices=context_index, dimension_numbers=dims,
+            slice_sizes=(1, 1, 1, self.input_size + int(self.bias))
         )
 
-        batch_size = logits.shape[0]
-        if self.classes is None:
-            bias = jnp.tile(self.params['bias'], reps=(batch_size, 1))
-        else:
-            bias = jnp.tile(self.params['bias'], reps=(batch_size, 1, 1))
+        bias = jnp.tile(params['bias'], reps=(batch_size, 1, 1))
         logits = jnp.concatenate([logits, bias], axis=-1)
         logits = jnp.expand_dims(logits, axis=-1)
 
@@ -144,169 +160,167 @@ class Linear(OnlineUpdateModule):
             a_max=jsp.special.logit(1.0 - self.pred_clipping)
         )
 
-        if target is not None:
+        if target is None:
+            return jnp.squeeze(output_logits, axis=-1)
+
+        else:
             logits = jnp.expand_dims(jnp.squeeze(logits, axis=-1), axis=-2)
             output_preds = jnn.sigmoid(output_logits)
             target = jnp.expand_dims(jnp.expand_dims(target, axis=-1), axis=-1)
-            delta = self.learning_rate * (target - output_preds) * logits
+            params['lr_step'], learning_rate = self.learning_rate.value(params['lr_step'])
+            delta = learning_rate * (target - output_preds) * logits
 
-            if self.classes is None:
-                dims = lax.ScatterDimensionNumbers(
-                    update_window_dims=(2,), inserted_window_dims=(0, 1),
-                    scatter_dims_to_operand_dims=(0, 1)
-                )
-            else:
-                dims = lax.ScatterDimensionNumbers(
-                    update_window_dims=(3,), inserted_window_dims=(0, 1, 2),
-                    scatter_dims_to_operand_dims=(0, 1, 2)
-                )
+            dims = lax.ScatterDimensionNumbers(
+                update_window_dims=(3,), inserted_window_dims=(0, 1, 2),
+                scatter_dims_to_operand_dims=(0, 1, 2)
+            )
 
             if self.weight_clipping is None:
-                self.params['weights'] = lax.scatter_add(
-                    operand=self.params['weights'], scatter_indices=context_index, updates=delta,
+                params['weights'] = lax.scatter_add(
+                    operand=params['weights'], scatter_indices=context_index, updates=delta,
                     dimension_numbers=dims
                 )
             else:
                 weights = jnp.clip(
                     weights + delta, a_min=-self.weight_clipping, a_max=self.weight_clipping
                 )
-                self.params['weights'] = lax.scatter(
-                    operand=self.params['weights'], scatter_indices=context_index, updates=weights,
+                params['weights'] = lax.scatter(
+                    operand=params['weights'], scatter_indices=context_index, updates=weights,
                     dimension_numbers=dims
                 )
 
-        return jnp.squeeze(output_logits, axis=-1)
+            return params, jnp.squeeze(output_logits, axis=-1)
 
 
-class GLN(OnlineUpdateModule):
+class GLN(GLNBase):
 
     def __init__(
-        self, layer_sizes: Sequence[int], input_size: int,
-        context_map_size: int = 4, learning_rate: float = 1e-4, pred_clipping: float = 0.05,
-        weight_clipping: float = None, classes: int = None, base_preds: int = None, seed: int = 0
+        self,
+        layer_sizes: Sequence[int],
+        input_size: int,
+        context_map_size: int = 4,
+        classes: Optional[Union[int, Sequence[object]]] = None,
+        base_predictor: Optional[Callable[[ndarray], ndarray]] = None,
+        learning_rate: float = 1e-4,
+        pred_clipping: float = 1e-3,
+        weight_clipping: float = 5.0,
+        bias: bool = True,
+        context_bias: bool = True,
+        seed: Optional[int] = None
     ):
-        super().__init__(learning_rate, pred_clipping, weight_clipping)
+        super().__init__(
+            layer_sizes, input_size, context_map_size, classes, base_predictor,
+            learning_rate, pred_clipping, weight_clipping, bias, context_bias
+        )
 
-        assert len(layer_sizes) > 0 and layer_sizes[-1] == 1
-        assert input_size > 0
-        assert context_map_size >= 2
-        assert classes is None or classes >= 2
-        assert base_preds is None or base_preds > 0
-
-        self.pred_clipping = pred_clipping
-        self.classes = classes
-        self.base_preds = base_preds
-        self.seed = seed
-
-        if self.base_preds is None:
-            logits_size = input_size
+        # Learning rate as dynamic parameter
+        if self.learning_rate == 'paper':
+            self.learning_rate = PaperLearningRate()
         else:
-            logits_size = base_preds
+            self.learning_rate = ConstantParameter(self.learning_rate)
 
-        self.layers = list()
-        for size in layer_sizes:
-            self.layers.append(Linear(
-                size=size, input_size=logits_size, context_size=input_size,
-                context_map_size=context_map_size, learning_rate=learning_rate,
-                pred_clipping=pred_clipping, weight_clipping=weight_clipping, classes=classes
-            ))
-            logits_size = size
-
+        # Random seed
+        if seed is None:
+            self.seed = randrange(1000000)
+        else:
+            self.seed = seed
         self.params = dict()
         self.params['rng'] = jnr.PRNGKey(seed=self.seed)
 
-        # Base predictions
-        if self.base_preds is not None:
-            self.params['rng'], rng = jnr.split(key=self.params['rng'], num=2)
-            if self.classes is None:
-                base_logits_shape = (1, self.base_preds)
-            else:
-                base_logits_shape = (1, self.classes, self.base_preds)
-            self.params['base_logits'] = jnr.uniform(
-                key=rng, shape=base_logits_shape,
-                minval=jsp.special.logit(self.pred_clipping),
-                maxval=jsp.special.logit(1.0 - self.pred_clipping)
-            )
-
         # Initialize layers
-        self.params['rng'], *rngs = jnr.split(key=self.params['rng'], num=(len(self.layers) + 1))
-        for n, (layer, rng) in enumerate(zip(self.layers, rngs)):
+        self.layers = list()
+        self.params['rng'], *rngs = jnr.split(
+            key=self.params['rng'], num=(len(self.layer_sizes) + 1)
+        )
+        previous_size = self.base_pred_size
+        for n, (size, rng) in enumerate(zip(self.layer_sizes, rngs)):
+            layer = Linear(
+                size=size, input_size=previous_size, context_size=self.input_size,
+                context_map_size=self.context_map_size, classes=self.num_classes,
+                learning_rate=self.learning_rate, pred_clipping=self.pred_clipping,
+                weight_clipping=self.weight_clipping, bias=self.bias, context_bias=self.context_bias
+            )
+            self.layers.append(layer)
             self.params[f'layer{n}'] = layer.initialize(rng=rng)
+            previous_size = size
 
         # JAX-compiled predict function
-        @jax.jit
-        def _jax_predict(params, input):
-            assert self.params is None
-            self.params = params
-            for n, layer in enumerate(self.layers):
-                layer.params = self.params[f'layer{n}']
-            prediction = self._predict(input)
-            self.params = None
-            for n, layer in enumerate(self.layers):
-                layer.params = None
-            return prediction
+        self._jax_predict = jax.jit(fun=self._predict)
 
         # JAX-compiled update function
-        @jax.jit
-        def _jax_update(params, input, target):
-            assert self.params is None
-            self.params = params
-            for n, layer in enumerate(self.layers):
-                layer.params = self.params[f'layer{n}']
-            prediction = self._predict(input, target)
-            params = self.params
-            self.params = None
-            for n, layer in enumerate(self.layers):
-                params[f'layer{n}'] = layer.params
-                layer.params = None
-            return params, prediction
-
-        self._jax_predict = _jax_predict
-        self._jax_update = _jax_update
+        self._jax_update = jax.jit(fun=self._predict)
 
     def predict(self, input, target=None):
-        params = self.params
-        self.params = None
-        if target is None:  # predict
-            prediction = self._jax_predict(params=params, input=input)
-        else:  # predict with online update
-            params, prediction = self._jax_update(params=params, input=input, target=target)
-        assert self.params is None
-        self.params = params
-        return prediction
-
-    def _predict(self, input, target=None):
         # Base predictions
-        if 'base_logits' in self.params:
-            batch_size = input.shape[0]
-            if self.classes is None:
-                logits = jnp.tile(self.params['base_logits'], reps=(batch_size, 1))
-            else:
-                logits = jnp.tile(self.params['base_logits'], reps=(batch_size, 1, 1))
-        else:
-            logits = jnp.clip(input, a_min=self.pred_clipping, a_max=(1.0 - self.pred_clipping))
-            logits = jsp.special.logit(logits)
-            if self.classes is not None:
-                logits = jnp.expand_dims(logits, axis=1)
-                logits = jnp.tile(logits, reps=(1, self.classes, 1))
+        base_preds = self.base_predictor(input)
+        base_preds = jnp.asarray(base_preds, dtype=float)
 
-        # Turn class integer into one-hot
-        if target is not None:
-            if self.classes is not None and jax.dtypes.issubdtype(target.dtype, jnp.integer):
-                target = jnn.one_hot(target, num_classes=self.classes, dtype=bool)
+        # Context
+        context = jnp.asarray(input, dtype=float)
+
+        if target is None:
+            # Predict without update
+            prediction = self._jax_predict(
+                params=self.params, base_preds=base_preds, context=context
+            )
+
+        else:
+            # Target
+            if self.num_classes == 1:
+                target = jnp.asarray(target, dtype=bool)
+            elif self.classes is None:
+                target = jnp.asarray(target, dtype=int)
             else:
-                target = jnp.where(target, 1.0, 0.0)
+                target = jnp.asarray([self.classes.index(x) for x in target], dtype=int)
+
+            # Predict with update
+            self.params, prediction = self._jax_update(
+                params=self.params, base_preds=base_preds, context=input, target=target
+            )
+
+        # Predicted class
+        if self.classes is None:
+            return prediction
+        else:
+            return [self.classes[x] for x in prediction]
+
+    def _predict(self, params, base_preds, context, target=None):
+        # Base logits
+        base_preds = jnp.clip(
+            base_preds, a_min=self.pred_clipping, a_max=(1.0 - self.pred_clipping)
+        )
+        logits = jsp.special.logit(base_preds)
+        logits = jnp.expand_dims(logits, axis=1)
+        logits = jnp.tile(logits, reps=(1, self.num_classes, 1))
+
+        # Turn target class into one-hot
+        if target is not None:
+            if self.num_classes == 1:
+                target = jnp.expand_dims(jnp.where(target, 1.0, 0.0), axis=1)
+            else:
+                target = jnn.one_hot(target, num_classes=self.num_classes)
 
         # Layers
-        for n, layer in enumerate(self.layers):
-            logits = layer.predict(logits=logits, context=input, target=target)
+        if target is None:
+            for n, layer in enumerate(self.layers):
+                logits = layer.predict(params=params[f'layer{n}'], logits=logits, context=context)
+        else:
+            for n, layer in enumerate(self.layers):
+                params[f'layer{n}'], logits = layer.predict(
+                    params=params[f'layer{n}'], logits=logits, context=context, target=target
+                )
+        logits = jnp.squeeze(logits, axis=-1)
 
         # Output prediction
-        logits = jnp.squeeze(logits, axis=-1)
-        if self.classes is None:
-            return logits > 0.0
+        if self.num_classes == 1:
+            prediction = jnp.squeeze(logits, axis=-1) > 0.0
         else:
-            return jnp.argmax(logits, axis=1)
+            prediction = jnp.argmax(logits, axis=1)
+
+        if target is None:
+            return prediction
+        else:
+            return params, prediction
 
     def evaluate(self, inputs, targets, batch_size):
         assert inputs.shape[0] % batch_size == 0
@@ -356,14 +370,14 @@ class GLN(OnlineUpdateModule):
                     n * batch_size, (n + 1) * batch_size - 1, num=batch_size, dtype=int
                 )
                 batch = batch % num_instances
-            params, _ = self._jax_update(params=params, input=inputs[batch], target=targets[batch])
+            params, _ = self._jax_update(params=params, base_preds=inputs[batch], target=targets[batch])
             return params
 
         params = self.params
         self.params = None
 
         if num_epochs is not None:
-            num_iterations = num_instances // batch_size
+            num_iterations = (num_epochs * num_instances) // batch_size
         params = lax.fori_loop(lower=0, upper=num_iterations, body_fun=body, init_val=params)
 
         assert self.params is None
@@ -371,26 +385,40 @@ class GLN(OnlineUpdateModule):
 
 
 def main():
+    import numpy as np
     import time
-    import datasets
+    import utils
 
-    train_images, train_labels, test_images, test_labels = datasets.get_mnist()
+    train_images, train_labels, test_images, test_labels = utils.get_mnist()
 
     model = GLN(
-        layer_sizes=[32, 32, 1], input_size=train_images.shape[1], context_map_size=4,
-        learning_rate=3e-5, pred_clipping=0.001, weight_clipping=5.0, classes=10, base_preds=None
+        layer_sizes=[16, 16, 16, 1], input_size=train_images.shape[1], context_map_size=4,
+        classes=10, base_predictor=None, learning_rate=1e-4, pred_clipping=1e-3,
+        weight_clipping=5.0, bias=True, context_bias=True
     )
 
     count_weights = (lambda count, x: count + x.size if isinstance(x, jnp.ndarray) else count)
     print('Weights:', jax.tree_util.tree_reduce(count_weights, model.params, initializer=0))
 
-    print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
+    num_correct = 0
+    for n in range(test_images.shape[0] // 100):
+        prediction = model.predict(test_images[n * 100: (n + 1) * 100])
+        num_correct += np.count_nonzero(prediction == test_labels[n * 100: (n + 1) * 100])
+    print('Accuracy:', num_correct / test_images.shape[0])
 
     start = time.time()
-    model.train(train_images, train_labels, batch_size=1, num_epochs=1)
+    num_epochs = 1
+    batch_size = 10
+    for n in range((num_epochs * train_images.shape[0]) // batch_size):
+        indices = np.arange(n * batch_size, (n + 1) * batch_size) % train_images.shape[0]
+        model.predict(train_images[indices], train_labels[indices])
     print('Time:', time.time() - start)
 
-    print('Accuracy:', model.evaluate(test_images, test_labels, batch_size=100))
+    num_correct = 0
+    for n in range(test_images.shape[0] // 100):
+        prediction = model.predict(test_images[n * 100: (n + 1) * 100])
+        num_correct += np.count_nonzero(prediction == test_labels[n * 100: (n + 1) * 100])
+    print('Accuracy:', num_correct / test_images.shape[0])
 
 
 if __name__ == '__main__':
