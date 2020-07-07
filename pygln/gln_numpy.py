@@ -252,7 +252,7 @@ class GLN():
 
 # %%
 if __name__ == '__main__':
-    from datasets import get_mnist_metrics
+    from utils import get_mnist_metrics
     m = GLN(layer_sizes=[4, 4, 1],
             input_size=784,
             context_size=784,

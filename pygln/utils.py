@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 from scipy.ndimage import interpolation
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
-from sklearn.preprocessing import label_binarize
 
 
+### adopted from https://fsix.github.io/mnist/
 def moments(image):
     c0, c1 = np.mgrid[:image.shape[0], :
                       image.shape[1]]  # A trick in numPy to create a mesh grid
@@ -36,6 +36,9 @@ def deskewAll(X):
     for i in range(len(X)):
         currents.append(deskew(X[i].reshape(28, 28)).flatten())
     return np.array(currents)
+
+
+###
 
 
 def get_mnist(deskewed=True):
@@ -119,18 +122,8 @@ def get_mnist_metrics(model,
 
     # define metrics
     classes = np.unique(result_transform(y_train))
-    y_true_bin = label_binarize(y_test, classes=classes).T
-    outputs_bin = (outputs > 0.5).astype(int)
-    bin_acc = np.sum(outputs_bin == y_true_bin) / np.prod(y_true_bin.shape)
-    print('overall binary accuracy', bin_acc)
-    per_class_acc = (outputs_bin == y_true_bin).sum(
-        axis=1) / y_true_bin.shape[1]
-    print('per class accuracy', per_class_acc)
-    print('average per class accuracy', np.mean(per_class_acc))
-
     outputs = outputs.argmax(axis=0).flatten()
     accuracy = 100 * sum(y_test == outputs) / len(y_test)
-    print('overall accuracy', accuracy)
     conf_mat = pd.DataFrame(confusion_matrix(y_test, outputs),
                             index=classes,
                             columns=classes)

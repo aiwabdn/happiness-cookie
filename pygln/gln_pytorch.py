@@ -270,7 +270,6 @@ class Linear(nn.Module):
         # if not final layer
         if self._bias is not None:
             # assign output of first neuron to bias
-            # done for ease of computation
             output_logits[:, 0] = self._bias
 
         return output_logits
@@ -335,8 +334,8 @@ class GLN(nn.Module):
 
 # %%
 if __name__ == '__main__':
-    from datasets import get_mnist_metrics
-    m = GLN(layer_sizes=[128, 128, 128, 32, 1],
+    from utils import get_mnist_metrics
+    m = GLN(layer_sizes=[4, 4, 1],
             input_size=784,
             context_size=784,
             classes=range(10),
