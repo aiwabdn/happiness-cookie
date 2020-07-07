@@ -2,8 +2,10 @@
 from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
-from scipy.special import logit
+import scipy
 from sklearn.preprocessing import label_binarize
+
+from base import GatedLinearNetwork
 
 
 def sigmoid(X: np.ndarray):
@@ -51,8 +53,8 @@ class Neuron():
         if output_logits.ndim > 1:
             output_logits = output_logits.diagonal()
 
-        output_logits = np.clip(output_logits, logit(self._output_clipping),
-                                logit(1 - self._output_clipping))
+        output_logits = np.clip(output_logits, scipy.special.logit(self._output_clipping),
+                                scipy.special.logit(1 - self._output_clipping))
 
         if targets is not None:
             sigmoids = sigmoid(output_logits)
@@ -86,8 +88,8 @@ class CustomLinear():
                        pred_clipping, weight_clipping, learning_rate)
                 for _ in range(max(1, size - 1))
             ]
-            self._bias = np.random.uniform(logit(pred_clipping),
-                                           logit(1 - pred_clipping))
+            self._bias = np.random.uniform(scipy.special.logit(pred_clipping),
+                                           scipy.special.logit(1 - pred_clipping))
         else:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
@@ -137,8 +139,8 @@ class Linear():
             self.num_classes = 1
 
         if bias:
-            self._bias = np.random.uniform(low=logit(pred_clipping),
-                                           high=logit(1 - pred_clipping),
+            self._bias = np.random.uniform(low=scipy.special.logit(pred_clipping),
+                                           high=scipy.special.logit(1 - pred_clipping),
                                            size=(self.num_classes, 1))
         else:
             self._bias = None
@@ -178,7 +180,7 @@ class Linear():
         output_logits = np.clip(
             np.matmul(current_selected_weights, logits).diagonal(axis1=-2,
                                                                  axis2=-1),
-            logit(self._output_clipping), logit(1 - self._output_clipping))
+            scipy.special.logit(self._output_clipping), scipy.special.logit(1 - self._output_clipping))
 
         if targets is not None:
             sigmoids = sigmoid(output_logits)
@@ -203,51 +205,56 @@ class Linear():
         return output_logits
 
 
-class GLN():
-    def __init__(self,
-                 layer_sizes: Sequence[int],
-                 input_size: int,
-                 context_size: int,
-                 classes: Sequence[Union[int, str]] = [0, 1],
-                 base_predictor: Optional[
-                     Callable[[np.ndarray], np.ndarray]] = None,
-                 context_map_size: int = 4,
-                 layer_bias: bool = True,
-                 learning_rate: float = 1e-2,
-                 pred_clipping: float = 0.01,
-                 weight_clipping: float = 5.0):
+class GLN(GatedLinearNetwork):
 
-        self.classes = classes
-        self.num_classes = len(classes)
-        self.base_predictor = base_predictor
+    def __init__(
+        self,
+        layer_sizes: Sequence[int],
+        input_size: int,
+        context_map_size: int = 4,
+        classes: Union[int, Sequence[object]] = 2,
+        base_predictor: Callable[[np.ndarray], np.ndarray] = (lambda x: x),
+        learning_rate: float = 1e-4,
+        pred_clipping: float = 1e-2,
+        weight_clipping: float = 5.0,
+        bias: bool = True,
+        context_bias: bool = True
+    ):
+        super().__init__(
+            layer_sizes, input_size, context_map_size, classes, base_predictor,
+            learning_rate, pred_clipping, weight_clipping, bias, context_bias
+        )
+
         self.layers = []
-        for idx, size in enumerate(layer_sizes):
-            if idx == 0:
-                layer = Linear(size, input_size, context_size,
-                               context_map_size, learning_rate, pred_clipping,
-                               weight_clipping, layer_bias, self.num_classes)
-            else:
-                layer = Linear(size, layer_sizes[idx - 1], context_size,
-                               context_map_size, learning_rate, pred_clipping,
-                               weight_clipping, layer_bias, self.num_classes)
+        previous_size = self.base_pred_size
+        for size in self.layer_sizes:
+            layer = Linear(
+                size, previous_size, self.input_size, self.context_map_size,
+                self.learning_rate, self.pred_clipping, self.weight_clipping,
+                self.bias, len(self.classes)
+            )
+            previous_size = size
             self.layers.append(layer)
-        self.set_learning_rate(learning_rate)
 
     def set_learning_rate(self, lr):
-        for l in self.layers:
-            l.set_learning_rate(lr)
+        for layer in self.layers:
+            layer.set_learning_rate(lr)
 
-    def predict(self, inputs, context_inputs, targets=None):
-        if targets is not None:
-            targets = label_binarize(targets, classes=self.classes).T
+    def predict(self, input, target=None):
         if callable(self.base_predictor):
-            out = self.base_predictor(inputs)
+            base_pred = self.base_predictor(input)
         else:
-            out = inputs
-        for l in self.layers:
-            out = l.predict(out, context_inputs, targets)
+            base_pred = input
+        base_pred = np.clip(base_pred, a_min=self.pred_clipping, a_max=(1.0 - self.pred_clipping))
+        logit = scipy.special.logit(base_pred)
 
-        return np.squeeze(sigmoid(out))
+        if target is not None:
+            target = label_binarize(target, classes=self.classes)
+
+        for layer in self.layers:
+            logit = layer.predict(logit, input, target)
+
+        return np.squeeze(sigmoid(logit))
 
 
 # %%
@@ -255,9 +262,8 @@ if __name__ == '__main__':
     from utils import get_mnist_metrics
     m = GLN(layer_sizes=[4, 4, 1],
             input_size=784,
-            context_size=784,
             classes=range(10),
-            layer_bias=False,
+            bias=False,
             base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
     acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1)
     print('Accuracy:', acc)
