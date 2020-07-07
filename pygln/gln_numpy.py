@@ -51,7 +51,8 @@ class Neuron():
         if output_logits.ndim > 1:
             output_logits = output_logits.diagonal()
 
-        output_logits = np.clip(output_logits, scipy.special.logit(self._output_clipping),
+        output_logits = np.clip(output_logits,
+                                scipy.special.logit(self._output_clipping),
                                 scipy.special.logit(1 - self._output_clipping))
 
         if targets is not None:
@@ -87,8 +88,9 @@ class CustomLinear():
                        pred_clipping, weight_clipping, learning_rate)
                 for _ in range(max(1, size - 1))
             ]
-            self._bias = np.random.uniform(scipy.special.logit(pred_clipping),
-                                           scipy.special.logit(1 - pred_clipping))
+            self._bias = np.random.uniform(
+                scipy.special.logit(pred_clipping),
+                scipy.special.logit(1 - pred_clipping))
         else:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
@@ -192,7 +194,8 @@ class Linear():
         output_logits = np.clip(
             np.matmul(current_selected_weights, logits).diagonal(axis1=-2,
                                                                  axis2=-1),
-            scipy.special.logit(self.pred_clipping), scipy.special.logit(1 - self.pred_clipping))
+            scipy.special.logit(self._output_clipping),
+            scipy.special.logit(1 - self._output_clipping))
 
         if target is not None:
             sigmoids = sigmoid(output_logits)
@@ -295,7 +298,6 @@ class GLN(GLNBase):
             return np.argmax(logits, axis=1)
 
 
-
 # %%
 if __name__ == '__main__':
     from utils import get_mnist_metrics
@@ -304,7 +306,7 @@ if __name__ == '__main__':
             classes=range(10),
             bias=False,
             base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
-    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1)
+    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=2, deskewed=False)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
