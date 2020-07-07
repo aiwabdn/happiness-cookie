@@ -1,5 +1,5 @@
 # %%
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Sequence, Union
 
 import numpy as np
 import scipy

@@ -115,14 +115,11 @@ def get_mnist_metrics(model,
         # run forward with data
         outputs.append(result_transform(model.predict(X_batch)))
 
-    if batch_size == 1:
-        outputs = np.vstack(outputs).T
-    else:
-        outputs = np.hstack(outputs)
+    outputs = np.vstack(outputs)
 
     # define metrics
     classes = np.unique(result_transform(y_train))
-    outputs = outputs.argmax(axis=0).flatten()
+    outputs = outputs.argmax(axis=1).flatten()
     accuracy = 100 * sum(y_test == outputs) / len(y_test)
     conf_mat = pd.DataFrame(confusion_matrix(y_test, outputs),
                             index=classes,
