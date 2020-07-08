@@ -1,6 +1,8 @@
+# %%
 import numpy as np
 import scipy
 from typing import Callable, Optional, Sequence, Union
+from sklearn.preprocessing import label_binarize
 
 from base import GLNBase
 
@@ -10,7 +12,6 @@ def sigmoid(X: np.ndarray):
 
 
 class Neuron():
-
     def __init__(self,
                  input_size: int,
                  context_size: int,
@@ -68,7 +69,6 @@ class Neuron():
 
 
 class CustomLinear():
-
     def __init__(self,
                  size: int,
                  input_size: int,
@@ -117,138 +117,162 @@ class CustomLinear():
 
 
 class Linear():
-
-    def __init__(
-        self,
-        size: int,
-        input_size: int,
-        context_size: int,
-        context_map_size: int,
-        classes: int,
-        learning_rate: float,
-        pred_clipping: float,
-        weight_clipping: float,
-        bias: bool,
-        context_bias: bool
-    ):
+    def __init__(self,
+                 size: int,
+                 input_size: int,
+                 context_size: int,
+                 context_map_size: int = 4,
+                 num_classes: int = 2,
+                 learning_rate: float = 0.01,
+                 pred_clipping: float = 0.001,
+                 weight_clipping: float = 5.0,
+                 bias: bool = True,
+                 context_bias: bool = True):
         super().__init__()
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert classes >= 1
+        assert num_classes >= 2
         assert learning_rate > 0.0
         assert 0.0 < pred_clipping < 1.0
         assert weight_clipping >= 1.0
 
-        self.size = size
-        self.classes = classes
+        self.num_classes = num_classes if num_classes > 2 else 1
         self.learning_rate = learning_rate
         # clipping value for predictions
         self.pred_clipping = pred_clipping
         # clipping value for weights of layer
         self.weight_clipping = weight_clipping
 
-        if bias:
-            self.bias = np.random.uniform(low=scipy.special.logit(self.pred_clipping),
-                                          high=scipy.special.logit(1 - self.pred_clipping),
-                                          size=(1, self.classes, 1))
+        if bias and size > 1:
+            self.bias = np.random.uniform(
+                low=scipy.special.logit(self.pred_clipping),
+                high=scipy.special.logit(1 - self.pred_clipping),
+                size=(1, 1, self.num_classes))
+            self.size = size - 1
         else:
             self.bias = None
+            self.size = size
 
-        self.context_maps = np.random.normal(size=(self.classes, size,
+        self._context_maps = np.random.normal(size=(self.num_classes,
+                                                    self.size,
                                                     context_map_size,
                                                     context_size))
-        self.context_maps /= np.linalg.norm(self.context_maps,
-                                            axis=-1,
-                                            keepdims=True)
+        self._context_maps /= np.linalg.norm(self._context_maps,
+                                             axis=-1,
+                                             keepdims=True)
         if context_bias:
-            self.context_bias = np.random.normal(size=(self.classes, size,
+            self._context_bias = np.random.normal(size=(self.num_classes,
+                                                        self.size,
                                                         context_map_size, 1))
         else:
-            self.context_bias = 0.0
-        self.boolean_converter = np.array([[2**i]
+            self._context_bias = 0.0
+        self._boolean_converter = np.array([[2**i]
                                             for i in range(context_map_size)])
-        input_size = input_size + int(self.bias is not None)
-        self.weights = np.ones(shape=(self.classes, size,
-                                       2**context_map_size,
-                                       input_size)) * (1 / input_size)
+        self._weights = np.full(shape=(self.num_classes, self.size,
+                                       2**context_map_size, input_size),
+                                fill_value=1 / input_size)
+        # print('cmap', self._context_maps.shape, 'cbias',
+        #       self._context_bias.shape, 'w', self._weights.shape, 'b',
+        #       self.bias)
 
     def set_learning_rate(self, lr):
         self.learning_rate = lr
 
-    def predict(self, logits, context, target=None):
-        distances = np.matmul(self.context_maps, context.T)
-        mapped_context_binary = (distances > self.context_bias).astype(np.int)
+    def predict(self, logit, context, target=None):
+        # print('logit', logit.shape, 'context', context.shape)
+        distances = np.matmul(self._context_maps, context.T)
+        # print('dist', distances.shape)
+        mapped_context_binary = (distances > self._context_bias).astype(np.int)
         current_context_indices = np.sum(mapped_context_binary *
-                                         self.boolean_converter,
+                                         self._boolean_converter,
                                          axis=-2)
-        current_selected_weights = self.weights[
-            np.arange(self.classes).reshape(-1, 1, 1),
-            np.arange(self.size).reshape(1, -1, 1), current_context_indices, :]
+        # print('cci', current_context_indices.shape, current_context_indices)
+        current_selected_weights = np.take_along_axis(
+            self._weights,
+            indices=np.expand_dims(current_context_indices, axis=-1),
+            axis=2)
+        # print('csw', current_selected_weights.shape)
 
-        logits = np.expand_dims(logits, axis=-3)
+        if logit.ndim == 2:
+            logit = np.expand_dims(logit, axis=-1)
 
-        if self.bias is not None:
-            logits = np.concatenate([logits, self.bias], axis=3)
+        # # print('logit', logit.shape)
+        # # print('logitT', logit.T.shape)
+        # # logit = np.expand_dims(logit.T, axis=1)
+        # print('tra', np.expand_dims(logit.T, axis=-3).shape)
+        # logit = np.expand_dims(logit.T, axis=-3)
 
         output_logits = np.clip(
-            np.matmul(current_selected_weights, logits).diagonal(axis1=-2,
+            np.matmul(current_selected_weights,
+                      np.expand_dims(logit.T, axis=-3)).diagonal(axis1=-2,
                                                                  axis2=-1),
-            scipy.special.logit(self._output_clipping),
-            scipy.special.logit(1 - self._output_clipping))
+            scipy.special.logit(self.pred_clipping),
+            scipy.special.logit(1 - self.pred_clipping)).T
+
+        # print('output_logits', output_logits.shape)
 
         if target is not None:
+            # print('target', target.shape)
             sigmoids = sigmoid(output_logits)
             diff = sigmoids - np.expand_dims(target, axis=1)
-            update_value = self.learning_rate * np.expand_dims(diff,
-                                                               axis=2) * logits
-            self.weights[
-                np.arange(self.classes).reshape(-1, 1, 1),
-                np.arange(self.size).
-                reshape(1, -1, 1), current_context_indices, :] = np.clip(
-                    self.
-                    _weights[np.arange(self.classes).reshape(-1, 1, 1),
-                             np.arange(self.size).
-                             reshape(1, -1, 1), current_context_indices, :] -
-                    np.transpose(update_value, (0, 1, 3, 2)),
-                    -self.weight_clipping, self.weight_clipping)
+            # print('diff', diff.shape)
+            # print('dlogit', logit.shape)
+            update_value = self.learning_rate * np.expand_dims(
+                diff, axis=-1) * np.expand_dims(np.swapaxes(logit, -1, -2),
+                                                axis=1)
+            # print('uvalue', update_value.shape)
+            np.add.at(
+                self._weights, [
+                    np.arange(self.num_classes).reshape(-1, 1, 1, 1),
+                    np.arange(self.size).reshape(1, -1, 1, 1),
+                    np.expand_dims(current_context_indices, axis=-1)
+                ], -np.expand_dims(np.transpose(update_value, [2, 1, 0, 3]),
+                                   axis=-2))
+            self._weights = np.clip(self._weights, -self.weight_clipping,
+                                    self.weight_clipping)
 
-        # if self.bias is not None:
-        #     output_logits.setflags(write=1)
-        #     output_logits[:, 0] = self.bias
+        # print(output_logits)
+        # print(output_logits.shape)
+        if self.bias is not None:
+            output_logits = np.concatenate([
+                np.vstack([self.bias] * output_logits.shape[0]), output_logits
+            ],
+                                           axis=1)
 
+        # print('final', output_logits.shape)
         return output_logits
 
 
 class GLN(GLNBase):
-
-    def __init__(
-        self,
-        layer_sizes: Sequence[int],
-        input_size: int,
-        context_map_size: int = 4,
-        classes: Optional[Union[int, Sequence[object]]] = None,
-        base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-        learning_rate: float = 1e-4,
-        pred_clipping: float = 1e-3,
-        weight_clipping: float = 5.0,
-        bias: bool = True,
-        context_bias: bool = True
-    ):
-        super().__init__(
-            layer_sizes, input_size, context_map_size, classes, base_predictor,
-            learning_rate, pred_clipping, weight_clipping, bias, context_bias
-        )
+    def __init__(self,
+                 layer_sizes: Sequence[int],
+                 input_size: int,
+                 context_map_size: int = 4,
+                 classes: Optional[Union[int, Sequence[object]]] = None,
+                 base_predictor: Optional[
+                     Callable[[np.ndarray], np.ndarray]] = None,
+                 learning_rate: float = 1e-2,
+                 pred_clipping: float = 1e-3,
+                 weight_clipping: float = 5.0,
+                 bias: bool = True,
+                 context_bias: bool = True):
+        super().__init__(layer_sizes, input_size, context_map_size, classes,
+                         base_predictor, learning_rate, pred_clipping,
+                         weight_clipping, bias, context_bias)
 
         # Initialize layers
         self.layers = list()
         previous_size = self.base_pred_size
+        if bias:
+            self.base_bias = np.random.uniform(
+                low=scipy.special.logit(pred_clipping),
+                high=scipy.special.logit(1 - pred_clipping))
         for size in self.layer_sizes:
-            layer = Linear(
-                size, previous_size, self.input_size, self.context_map_size, self.num_classes,
-                self.learning_rate, self.pred_clipping, self.weight_clipping, self.bias,
-                self.context_bias
-            )
+            layer = Linear(size, previous_size, self.input_size,
+                           self.context_map_size, self.num_classes,
+                           self.learning_rate, self.pred_clipping,
+                           self.weight_clipping, self.bias, self.context_bias)
             self.layers.append(layer)
             previous_size = size
 
@@ -265,48 +289,92 @@ class GLN(GLNBase):
         context = np.asarray(input, dtype=float)
 
         # Target
+        # if target is not None:
+        #     if self.num_classes == 1:
+        #         target = np.asarray(target, dtype=bool)
+        #     elif self.classes is None:
+        #         target = np.asarray(target, dtype=int)
+        #     else:
+        #         target = np.asarray([self.classes.index(x) for x in target],
+        #                             dtype=int)
         if target is not None:
-            if self.num_classes == 1:
-                target = np.asarray(target, dtype=bool)
-            elif self.classes is None:
-                target = np.asarray(target, dtype=int)
-            else:
-                target = np.asarray([self.classes.index(x) for x in target], dtype=int)
+            target = label_binarize(target, classes=self.classes)
 
         # Base logits
-        base_preds = np.clip(base_preds, a_min=self.pred_clipping, a_max=(1.0 - self.pred_clipping))
+        base_preds = np.clip(base_preds,
+                             a_min=self.pred_clipping,
+                             a_max=(1.0 - self.pred_clipping))
         logits = scipy.special.logit(base_preds)
-        logits = np.expand_dims(logits, axis=1)
-        logits = np.tile(logits, reps=(1, self.num_classes, 1))
+        if self.bias:
+            logits[:, 0] = self.base_bias
 
         # Turn target class into one-hot
-        if target is not None:
-            if self.num_classes == 1:
-                target = np.expand_dims(np.where(target, 1.0, 0.0), axis=1)
-            else:
-                target = np.eye(self.num_classes)[target]
+        # if target is not None:
+        #     if self.num_classes == 1:
+        #         target = np.expand_dims(np.where(target, 1.0, 0.0), axis=1)
+        #     else:
+        #         target = np.eye(self.num_classes)[target]
 
         # Layers
         for layer in self.layers:
-            logits = layer.predict(logits=logits, context=context, target=target)
-        logits = np.squeeze(logits, axis=-1)
+            logits = layer.predict(logit=logits,
+                                   context=context,
+                                   target=target)
+        # logits = np.squeeze(logits, axis=-1)
 
         # Output prediction
-        if self.num_classes == 1:
-            return np.squeeze(logits, axis=-1) > 0.0
-        else:
-            return np.argmax(logits, axis=1)
+        # if self.num_classes == 1:
+        #     return np.squeeze(logits, axis=-1) > 0.0
+        # else:
+        #     return np.argmax(logits, axis=1)
+        return sigmoid(np.squeeze(logits))
 
+
+# %%
+# l = Linear(4, 784, 784, classes=5)
+# x = np.random.normal(size=(2, 784))
+# y = label_binarize(np.array([0, 1]), classes=range(5))
+
+# # %%
+# out = l.predict(x, x, y)
+# out
+
+# # %%
+# lf = Linear(1, 4, 784, classes=5)
+
+# # %%
+# lf.predict(out, x, y)
+
+# # %%
+# m = GLN(layer_sizes=[4, 4, 1], input_size=784, classes=range(10), bias=True)
+# x = np.random.normal(size=(1, 784))
+# y = label_binarize(np.array([1]), classes=range(10))
+
+# # %%
+# m.predict(x, y)
 
 # %%
 if __name__ == '__main__':
     from utils import get_mnist_metrics
-    m = GLN(layer_sizes=[4, 4, 1],
+    m = GLN(layer_sizes=[32, 32, 1],
             input_size=784,
             classes=range(10),
-            bias=False,
+            bias=True,
             base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
-    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=2, deskewed=False)
+    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1, deskewed=True)
+    print('Accuracy:', acc)
+    print('Confusion matrix:\n', conf_mat)
+    print('Prec-Rec-F:\n', prfs)
+
+# %%
+if __name__ == '__main__':
+    from utils import get_mnist_metrics
+    m = GLN(layer_sizes=[128, 128, 128, 1],
+            input_size=784,
+            classes=range(10),
+            bias=True,
+            base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
+    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1, deskewed=True)
     print('Accuracy:', acc)
     print('Confusion matrix:\n', conf_mat)
     print('Prec-Rec-F:\n', prfs)
