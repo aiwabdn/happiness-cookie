@@ -1,10 +1,9 @@
-# %%
 import numpy as np
 import scipy
 from typing import Callable, Optional, Sequence, Union
 from sklearn.preprocessing import label_binarize
 
-from base import GLNBase
+from ..base import GLNBase
 
 
 def sigmoid(X: np.ndarray):
@@ -172,36 +171,23 @@ class Linear():
         self._weights = np.full(shape=(self.num_classes, self.size,
                                        2**context_map_size, input_size),
                                 fill_value=1 / input_size)
-        # print('cmap', self._context_maps.shape, 'cbias',
-        #       self._context_bias.shape, 'w', self._weights.shape, 'b',
-        #       self.bias)
 
     def set_learning_rate(self, lr):
         self.learning_rate = lr
 
     def predict(self, logit, context, target=None):
-        # print('logit', logit.shape, 'context', context.shape)
         distances = np.matmul(self._context_maps, context.T)
-        # print('dist', distances.shape)
         mapped_context_binary = (distances > self._context_bias).astype(np.int)
         current_context_indices = np.sum(mapped_context_binary *
                                          self._boolean_converter,
                                          axis=-2)
-        # print('cci', current_context_indices.shape, current_context_indices)
         current_selected_weights = np.take_along_axis(
             self._weights,
             indices=np.expand_dims(current_context_indices, axis=-1),
             axis=2)
-        # print('csw', current_selected_weights.shape)
 
         if logit.ndim == 2:
             logit = np.expand_dims(logit, axis=-1)
-
-        # # print('logit', logit.shape)
-        # # print('logitT', logit.T.shape)
-        # # logit = np.expand_dims(logit.T, axis=1)
-        # print('tra', np.expand_dims(logit.T, axis=-3).shape)
-        # logit = np.expand_dims(logit.T, axis=-3)
 
         output_logits = np.clip(
             np.matmul(current_selected_weights,
@@ -210,18 +196,13 @@ class Linear():
             scipy.special.logit(self.pred_clipping),
             scipy.special.logit(1 - self.pred_clipping)).T
 
-        # print('output_logits', output_logits.shape)
-
         if target is not None:
-            # print('target', target.shape)
             sigmoids = sigmoid(output_logits)
             diff = sigmoids - np.expand_dims(target, axis=1)
-            # print('diff', diff.shape)
-            # print('dlogit', logit.shape)
             update_value = self.learning_rate * np.expand_dims(
                 diff, axis=-1) * np.expand_dims(np.swapaxes(logit, -1, -2),
                                                 axis=1)
-            # print('uvalue', update_value.shape)
+
             np.add.at(
                 self._weights, [
                     np.arange(self.num_classes).reshape(-1, 1, 1, 1),
@@ -232,15 +213,12 @@ class Linear():
             self._weights = np.clip(self._weights, -self.weight_clipping,
                                     self.weight_clipping)
 
-        # print(output_logits)
-        # print(output_logits.shape)
         if self.bias is not None:
             output_logits = np.concatenate([
                 np.vstack([self.bias] * output_logits.shape[0]), output_logits
             ],
                                            axis=1)
 
-        # print('final', output_logits.shape)
         return output_logits
 
 
@@ -276,11 +254,11 @@ class GLN(GLNBase):
             self.layers.append(layer)
             previous_size = size
 
-    def set_learning_rate(self, lr):
+    def set_learning_rate(self, lr: float):
         for layer in self.layers:
             layer.set_learning_rate(lr)
 
-    def predict(self, input, target=None):
+    def predict(self, input: np.ndarray, target: np.ndarray = None):
         # Base predictions
         base_preds = self.base_predictor(input)
         base_preds = np.asarray(base_preds, dtype=float)
@@ -289,14 +267,6 @@ class GLN(GLNBase):
         context = np.asarray(input, dtype=float)
 
         # Target
-        # if target is not None:
-        #     if self.num_classes == 1:
-        #         target = np.asarray(target, dtype=bool)
-        #     elif self.classes is None:
-        #         target = np.asarray(target, dtype=int)
-        #     else:
-        #         target = np.asarray([self.classes.index(x) for x in target],
-        #                             dtype=int)
         if target is not None:
             target = label_binarize(target, classes=self.classes)
 
@@ -306,75 +276,13 @@ class GLN(GLNBase):
                              a_max=(1.0 - self.pred_clipping))
         logits = scipy.special.logit(base_preds)
         if self.bias:
+            # introduce layer bias
             logits[:, 0] = self.base_bias
-
-        # Turn target class into one-hot
-        # if target is not None:
-        #     if self.num_classes == 1:
-        #         target = np.expand_dims(np.where(target, 1.0, 0.0), axis=1)
-        #     else:
-        #         target = np.eye(self.num_classes)[target]
 
         # Layers
         for layer in self.layers:
             logits = layer.predict(logit=logits,
                                    context=context,
                                    target=target)
-        # logits = np.squeeze(logits, axis=-1)
 
-        # Output prediction
-        # if self.num_classes == 1:
-        #     return np.squeeze(logits, axis=-1) > 0.0
-        # else:
-        #     return np.argmax(logits, axis=1)
         return sigmoid(np.squeeze(logits))
-
-
-# %%
-# l = Linear(4, 784, 784, classes=5)
-# x = np.random.normal(size=(2, 784))
-# y = label_binarize(np.array([0, 1]), classes=range(5))
-
-# # %%
-# out = l.predict(x, x, y)
-# out
-
-# # %%
-# lf = Linear(1, 4, 784, classes=5)
-
-# # %%
-# lf.predict(out, x, y)
-
-# # %%
-# m = GLN(layer_sizes=[4, 4, 1], input_size=784, classes=range(10), bias=True)
-# x = np.random.normal(size=(1, 784))
-# y = label_binarize(np.array([1]), classes=range(10))
-
-# # %%
-# m.predict(x, y)
-
-# %%
-if __name__ == '__main__':
-    from utils import get_mnist_metrics
-    m = GLN(layer_sizes=[32, 32, 1],
-            input_size=784,
-            classes=range(10),
-            bias=True,
-            base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
-    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1, deskewed=True)
-    print('Accuracy:', acc)
-    print('Confusion matrix:\n', conf_mat)
-    print('Prec-Rec-F:\n', prfs)
-
-# %%
-if __name__ == '__main__':
-    from utils import get_mnist_metrics
-    m = GLN(layer_sizes=[128, 128, 128, 1],
-            input_size=784,
-            classes=range(10),
-            bias=True,
-            base_predictor=lambda x: (x * (1 - 2 * 0.01)) + 0.01)
-    acc, conf_mat, prfs = get_mnist_metrics(m, batch_size=1, deskewed=True)
-    print('Accuracy:', acc)
-    print('Confusion matrix:\n', conf_mat)
-    print('Prec-Rec-F:\n', prfs)

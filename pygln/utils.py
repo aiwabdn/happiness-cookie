@@ -4,16 +4,17 @@ from scipy.ndimage import interpolation
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
 
-### adopted from https://fsix.github.io/mnist/
+###################################################
+# adopted from https://fsix.github.io/mnist/
 def moments(image):
     c0, c1 = np.mgrid[:image.shape[0], :
                       image.shape[1]]  # A trick in numPy to create a mesh grid
-    totalImage = np.sum(image)  #sum of pixels
-    m0 = np.sum(c0 * image) / totalImage  #mu_x
-    m1 = np.sum(c1 * image) / totalImage  #mu_y
-    m00 = np.sum((c0 - m0)**2 * image) / totalImage  #var(x)
-    m11 = np.sum((c1 - m1)**2 * image) / totalImage  #var(y)
-    m01 = np.sum((c0 - m0) * (c1 - m1) * image) / totalImage  #covariance(x,y)
+    totalImage = np.sum(image)  # sum of pixels
+    m0 = np.sum(c0 * image) / totalImage  # mu_x
+    m1 = np.sum(c1 * image) / totalImage  # mu_y
+    m00 = np.sum((c0 - m0)**2 * image) / totalImage  # var(x)
+    m11 = np.sum((c1 - m1)**2 * image) / totalImage  # var(y)
+    m01 = np.sum((c0 - m0) * (c1 - m1) * image) / totalImage  # covariance(x,y)
     mu_vector = np.array([m0, m1
                           ])  # Notice that these are \mu_x, \mu_y respectively
     covariance_matrix = np.array(
@@ -38,7 +39,7 @@ def deskewAll(X):
     return np.array(currents)
 
 
-###
+###################################################
 
 
 def get_mnist(deskewed=True):
@@ -66,19 +67,13 @@ def shuffle_data(X, y):
     return X[permutation, :], y[permutation]
 
 
-def get_mnist_metrics(model,
-                      mnist_class=0,
-                      batch_size=1,
-                      deskewed=True,
-                      data_transform=None,
-                      result_transform=None):
+def evaluate_mnist(model,
+                   deskewed=True,
+                   batch_size=1,
+                   num_epochs=1,
+                   data_transform=None,
+                   result_transform=None):
     from tqdm import tqdm
-    from sklearn.preprocessing import label_binarize
-
-    if not data_transform:
-        data_transform = lambda x, y: (x, y)
-    if not result_transform:
-        result_transform = lambda x: x
 
     # get MNIST data as numpy arrays
     X_train, y_train, X_test, y_test = get_mnist(deskewed)
@@ -86,22 +81,25 @@ def get_mnist_metrics(model,
     X_train, y_train = shuffle_data(X_train, y_train)
     X_test, y_test = shuffle_data(X_test, y_test)
 
-    X_train, y_train = data_transform(X_train, y_train)
-    X_test, _ = data_transform(X_test, y_test)
+    if data_transform:
+        X_train = data_transform(X_train)
+        y_train = data_transform(y_train)
+        X_test = data_transform(X_test)
 
     num_batches = int(np.ceil(len(X_train) / batch_size))
-    for i in tqdm(range(num_batches)):
-        # set learning rate
-        model.set_learning_rate(min(5500 / (i + 1), 0.04))
+    for e in range(num_epochs):
+        for i in tqdm(range(num_batches)):
+            # set learning rate, following paper
+            model.set_learning_rate(min(100 / (i + 1), 0.01))
 
-        # get batch
-        batch_start = i * batch_size
-        batch_end = batch_start + batch_size
-        X_batch = X_train[batch_start:batch_end]
-        y_batch = y_train[batch_start:batch_end]
+            # get batch
+            batch_start = i * batch_size
+            batch_end = batch_start + batch_size
+            X_batch = X_train[batch_start:batch_end]
+            y_batch = y_train[batch_start:batch_end]
 
-        # run forward with data
-        _ = model.predict(X_batch, y_batch)
+            # run forward with data
+            _ = model.predict(X_batch, y_batch)
 
     # perform inference on test set
     num_batches = int(np.ceil(len(X_test) / batch_size))
@@ -113,12 +111,15 @@ def get_mnist_metrics(model,
         X_batch = X_test[batch_start:batch_end]
 
         # run forward with data
-        outputs.append(result_transform(model.predict(X_batch)))
+        pred = model.predict(X_batch)
+        if result_transform:
+            pred = result_transform(pred)
+        outputs.append(pred)
 
     outputs = np.vstack(outputs)
 
     # define metrics
-    classes = np.unique(result_transform(y_train))
+    classes = np.unique(y_train)
     outputs = outputs.argmax(axis=1).flatten()
     accuracy = 100 * sum(y_test == outputs) / len(y_test)
     conf_mat = pd.DataFrame(confusion_matrix(y_test, outputs),
