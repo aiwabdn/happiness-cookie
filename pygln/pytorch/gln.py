@@ -137,8 +137,8 @@ class Linear(nn.Module):
 
     def extra_repr(self):
         return 'input_size={}, neurons={}, context_map_size={}, bias={}'.format(
-            self._weights.size(2), self._context_maps.size(0),
-            self._context_maps.size(1), self.bias)
+            self._weights.size(3), self._weights.size(1),
+            self._context_maps.size(2), self.bias)
 
 
 class GLN(nn.Module, GLNBase):
@@ -202,3 +202,7 @@ class GLN(nn.Module, GLNBase):
                                    context=context,
                                    target=target)
         return torch.sigmoid(torch.squeeze(logits))
+
+    def extra_repr(self):
+        return 'num_classes={}, num_layers={}'.format(self.num_classes,
+                                                      len(self.layers))
