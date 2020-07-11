@@ -3,7 +3,7 @@ import scipy
 import tensorflow as tf
 from typing import Callable, Optional, Sequence, Union
 
-from base import GLNBase
+from pygln.base import GLNBase
 
 
 class DynamicParameter(tf.Module):
@@ -356,7 +356,7 @@ def main():
     train_images, train_labels, test_images, test_labels = utils.get_mnist()
 
     model = GLN(
-        layer_sizes=[16, 16, 16, 1], input_size=train_images.shape[1], context_map_size=4,
+        layer_sizes=[16, 16, 1], input_size=train_images.shape[1], context_map_size=4,
         classes=10, base_predictor=None, learning_rate=1e-4, pred_clipping=1e-3,
         weight_clipping=5.0, bias=True, context_bias=True
     )
@@ -371,6 +371,13 @@ def main():
     num_epochs = 1
     batch_size = 10
     for n in range((num_epochs * train_images.shape[0]) // batch_size):
+        # if n > 0 and n % 100 == 0:
+        #     num_correct = 0
+        #     for n in range(test_images.shape[0] // 100):
+        #         prediction = model.predict(test_images[n * 100: (n + 1) * 100])
+        #         num_correct += np.count_nonzero(prediction == test_labels[n * 100: (n + 1) * 100])
+        #     print('Accuracy:', num_correct / test_images.shape[0])
+
         indices = np.arange(n * batch_size, (n + 1) * batch_size) % train_images.shape[0]
         model.predict(train_images[indices], train_labels[indices])
     print('Time:', time.time() - start)
