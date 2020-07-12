@@ -44,9 +44,10 @@ class Linear(nn.Module):
         self.weight_clipping = weight_clipping
 
         if bias and size > 1:
-            self.bias = torch.empty((1, 1, self.num_classes))
-            self.bias.uniform_(slogit(self.pred_clipping),
-                               slogit(1 - self.pred_clipping))
+            self.bias = torch.empty(
+                (1, 1,
+                 self.num_classes)).uniform_(slogit(self.pred_clipping),
+                                             slogit(1 - self.pred_clipping))
             self.size = size - 1
         else:
             self.bias = None
@@ -56,10 +57,6 @@ class Linear(nn.Module):
             np.random.normal(size=(self.num_classes, self.size,
                                    context_map_size, context_size)),
             dtype=torch.float32)
-        self._context_maps /= torch.norm(self._context_maps,
-                                         dim=-1,
-                                         keepdim=True)
-        self._context_maps = nn.Parameter(self._context_maps)
 
         # constant values for halfspace gating
         if context_bias:
@@ -69,8 +66,14 @@ class Linear(nn.Module):
                 torch.tensor(np.random.normal(size=context_bias_shape),
                              dtype=torch.float32),
                 requires_grad=False)
+            self._context_maps /= torch.norm(self._context_maps,
+                                             dim=-1,
+                                             keepdim=True)
         else:
-            self._context_bias = 0.0
+            self._context_bias = torch.tensor(0.0)
+
+        self._context_maps = nn.Parameter(self._context_maps)
+        self._context_bias = nn.Parameter(self._context_bias)
 
         # array to convert mapped_context_binary context to index
         self._boolean_converter = nn.Parameter(torch.as_tensor(

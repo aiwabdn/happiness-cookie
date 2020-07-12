@@ -1,7 +1,5 @@
 import numpy as np
-import pandas as pd
 from scipy.ndimage import interpolation
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
 
 ###################################################
@@ -68,6 +66,7 @@ def shuffle_data(X, y):
 
 
 def evaluate_mnist(model,
+                   max_learning_rate=0.01,
                    deskewed=True,
                    batch_size=1,
                    num_epochs=1,
@@ -86,11 +85,13 @@ def evaluate_mnist(model,
         y_train = data_transform(y_train)
         X_test = data_transform(X_test)
 
-    num_batches = int(np.ceil(len(X_train) / batch_size))
+    accuracy_after_each_epoch = []
+
     for e in range(num_epochs):
+        num_batches = int(np.ceil(len(X_train) / batch_size))
         for i in tqdm(range(num_batches)):
             # set learning rate, following paper
-            model.set_learning_rate(min(100 / (i + 1), 0.01))
+            model.set_learning_rate(min(100 / (i + 1), max_learning_rate))
 
             # get batch
             batch_start = i * batch_size
@@ -101,32 +102,29 @@ def evaluate_mnist(model,
             # run forward with data
             _ = model.predict(X_batch, y_batch)
 
-    # perform inference on test set
-    num_batches = int(np.ceil(len(X_test) / batch_size))
-    outputs = []
-    for i in tqdm(range(num_batches)):
-        # get batch
-        batch_start = i * batch_size
-        batch_end = batch_start + batch_size
-        X_batch = X_test[batch_start:batch_end]
+        # perform inference on test set
+        num_batches = int(np.ceil(len(X_test) / batch_size))
+        outputs = []
+        for i in tqdm(range(num_batches)):
+            # get batch
+            batch_start = i * batch_size
+            batch_end = batch_start + batch_size
+            X_batch = X_test[batch_start:batch_end]
 
-        # run forward with data
-        pred = model.predict(X_batch)
-        if result_transform:
-            pred = result_transform(pred)
-        outputs.append(pred)
+            # run forward with data
+            pred = model.predict(X_batch)
+            if result_transform:
+                pred = result_transform(pred)
+            outputs.append(pred)
 
-    outputs = np.vstack(outputs)
+        outputs = np.vstack(outputs)
 
-    # define metrics
-    classes = np.unique(y_train)
-    outputs = outputs.argmax(axis=1).flatten()
-    accuracy = 100 * sum(y_test == outputs) / len(y_test)
-    conf_mat = pd.DataFrame(confusion_matrix(y_test, outputs),
-                            index=classes,
-                            columns=classes)
-    prfs_mat = pd.DataFrame(precision_recall_fscore_support(y_test, outputs),
-                            index=['precision', 'recall', 'fscore', 'support'],
-                            columns=classes)
+        # define metrics
+        outputs = outputs.argmax(axis=1).flatten()
+        accuracy = 100 * sum(y_test == outputs) / len(y_test)
+        accuracy_after_each_epoch.append(accuracy)
 
-    return accuracy, conf_mat, prfs_mat
+    if len(accuracy_after_each_epoch) > 1:
+        return accuracy_after_each_epoch
+    else:
+        return accuracy_after_each_epoch[0]

@@ -157,13 +157,13 @@ class Linear():
                                                     self.size,
                                                     context_map_size,
                                                     context_size))
-        self._context_maps /= np.linalg.norm(self._context_maps,
-                                             axis=-1,
-                                             keepdims=True)
         if context_bias:
             self._context_bias = np.random.normal(size=(self.num_classes,
                                                         self.size,
                                                         context_map_size, 1))
+            self._context_maps /= np.linalg.norm(self._context_maps,
+                                                 axis=-1,
+                                                 keepdims=True)
         else:
             self._context_bias = 0.0
         self._boolean_converter = np.array([[2**i]
