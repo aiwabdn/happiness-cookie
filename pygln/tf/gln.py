@@ -1,7 +1,7 @@
 import numpy as np
-import scipy
+import scipy.special
 import tensorflow as tf
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Optional, Sequence
 
 from pygln.base import GLNBase
 
@@ -66,7 +66,7 @@ class Linear(OnlineUpdateModule):
         input_size: int,
         context_size: int,
         context_map_size: int,
-        classes: int,
+        num_classes: int,
         learning_rate: DynamicParameter,
         pred_clipping: float,
         weight_clipping: float,
@@ -77,23 +77,23 @@ class Linear(OnlineUpdateModule):
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert classes >= 1
+        assert num_classes >= 1
 
         self.size = size
         self.context_map_size = context_map_size
-        self.classes = classes
+        self.num_classes = num_classes
 
 
         logits_size = input_size + int(bias)
         num_context_indices = 1 << self.context_map_size
-        weights_shape = (self.classes, self.size, num_context_indices, logits_size)
+        weights_shape = (self.num_classes, self.size, num_context_indices, logits_size)
         initializer = tf.constant_initializer(value=(1.0 / logits_size))(shape=weights_shape)
         self.weights = tf.Variable(
             initial_value=initializer, trainable=True, name='weights', dtype=tf.dtypes.float32
         )
 
         if bias:
-            bias_shape = (1, self.classes, 1)
+            bias_shape = (1, self.num_classes, 1)
             initializer = tf.random_uniform_initializer(
                 minval=scipy.special.logit(self.pred_clipping),
                 maxval=scipy.special.logit(1.0 - self.pred_clipping)
@@ -104,7 +104,7 @@ class Linear(OnlineUpdateModule):
         else:
             self.bias = None
 
-        context_maps_shape = (1, self.classes, self.size, self.context_map_size, context_size)
+        context_maps_shape = (1, self.num_classes, self.size, self.context_map_size, context_size)
         if context_bias:
             context_maps = tf.random.normal(shape=context_maps_shape, dtype=tf.dtypes.float32)
             norm = tf.norm(context_maps, axis=-1, keepdims=True)
@@ -113,7 +113,7 @@ class Linear(OnlineUpdateModule):
                 dtype=tf.dtypes.float32
             )
 
-            context_bias_shape = (1, self.classes, self.size, self.context_map_size)
+            context_bias_shape = (1, self.num_classes, self.size, self.context_map_size)
             initializer = tf.random_normal_initializer()(shape=context_bias_shape)
             self.context_bias = tf.Variable(
                 initial_value=initializer, trainable=False, name='context_bias',
@@ -138,7 +138,7 @@ class Linear(OnlineUpdateModule):
 
         batch_size = tf.shape(logits)[0]
         class_neuron_index = tf.constant(
-            [[[[c, n] for n in range(self.size)] for c in range(self.classes)]]
+            [[[[c, n] for n in range(self.size)] for c in range(self.num_classes)]]
         )
         class_neuron_index = tf.tile(class_neuron_index, multiples=(batch_size, 1, 1, 1))
         context_index = tf.concat([class_neuron_index, context_index], axis=-1)
@@ -184,7 +184,7 @@ class GLN(tf.Module, GLNBase):
         layer_sizes: Sequence[int],
         input_size: int,
         context_map_size: int = 4,
-        classes: Optional[Union[int, Sequence[object]]] = None,
+        num_classes: Optional[int] = None,
         base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         learning_rate: float = 1e-4,
         pred_clipping: float = 1e-3,
@@ -194,7 +194,7 @@ class GLN(tf.Module, GLNBase):
     ):
         tf.Module.__init__(self, name='GLN')
         GLNBase.__init__(
-            self, layer_sizes, input_size, context_map_size, classes, base_predictor,
+            self, layer_sizes, input_size, context_map_size, num_classes, base_predictor,
             learning_rate, pred_clipping, weight_clipping, bias, context_bias
         )
 
@@ -210,7 +210,7 @@ class GLN(tf.Module, GLNBase):
         for size in self.layer_sizes:
             self.layers.append(Linear(
                 size=size, input_size=previous_size, context_size=self.input_size,
-                context_map_size=self.context_map_size, classes=self.num_classes,
+                context_map_size=self.context_map_size, num_classes=self.num_classes,
                 learning_rate=self.learning_rate, pred_clipping=self.pred_clipping,
                 weight_clipping=self.weight_clipping, bias=self.bias, context_bias=self.context_bias
             ))
@@ -255,21 +255,13 @@ class GLN(tf.Module, GLNBase):
             # Target
             if self.num_classes == 1:
                 target = tf.convert_to_tensor(target, dtype=self.target_dtype)
-            elif self.classes is None:
-                target = tf.convert_to_tensor(target, dtype=self.target_dtype)
             else:
-                target = tf.convert_to_tensor(
-                    [self.classes.index(x) for x in target], dtype=self.target_dtype
-                )
+                target = tf.convert_to_tensor(target, dtype=self.target_dtype)
 
             # Predict with update
             prediction = self._tf_update(base_preds=base_preds, context=context, target=target)
 
-        # Predicted class
-        if self.classes is None:
-            return prediction.numpy()
-        else:
-            return [self.classes[x] for x in prediction.numpy()]
+        return prediction.numpy()
 
     def _predict(self, base_preds, context, target=None):
         # Base logits
@@ -297,97 +289,3 @@ class GLN(tf.Module, GLNBase):
             return tf.squeeze(logits, axis=-1) > 0.0
         else:
             return tf.math.argmax(logits, axis=1)
-
-    def evaluate(self, inputs, targets, batch_size):
-        assert inputs.shape[0] % batch_size == 0
-
-        inputs = tf.convert_to_tensor(inputs, dtype=tf.dtypes.float32)
-        targets = tf.convert_to_tensor(targets, dtype=self.target_dtype)
-        num_instances = inputs.shape[0]
-
-        @tf.function
-        def body(n, num_correct):
-            batch = tf.range(n * batch_size, (n + 1) * batch_size) % num_instances
-            prediction = self._tf_predict(input=tf.gather(inputs, batch))
-            num_correct += tf.math.count_nonzero(prediction == tf.gather(targets, batch))
-            return n + 1, num_correct
-
-        @tf.function
-        def cond(n, accuracy):
-            return True
-
-        num_iterations = num_instances // batch_size
-        _, num_correct = tf.while_loop(
-            cond=cond, body=body, loop_vars=(0, 0), maximum_iterations=num_iterations
-        )
-        return num_correct.numpy() / num_instances
-
-    def train(self, inputs, targets, batch_size, num_iterations=None, num_epochs=None):
-        assert (num_iterations is None) is not (num_epochs is None)
-        assert inputs.shape[0] % batch_size == 0
-
-        inputs = tf.convert_to_tensor(inputs, dtype=tf.dtypes.float32)
-        targets = tf.convert_to_tensor(targets, dtype=self.target_dtype)
-        num_instances = inputs.shape[0]
-
-        @tf.function
-        def body(n):
-            if num_epochs is None:
-                batch = tf.random.uniform(batch_size, maxval=num_instances, dtype=tf.dtypes.int64)
-            else:
-                batch = tf.range(n * batch_size, (n + 1) * batch_size) % num_instances
-            self._tf_update(input=tf.gather(inputs, batch), target=tf.gather(targets, batch))
-            return (n + 1,)
-
-        @tf.function
-        def cond(n):
-            return True
-
-        if num_epochs is not None:
-            num_iterations = (num_epochs * num_instances) // batch_size
-        n, = tf.while_loop(cond=cond, body=body, loop_vars=(0,), maximum_iterations=num_iterations)
-        assert n.numpy().item() == num_iterations, (n, num_iterations)
-
-
-def main():
-    import time
-    import utils
-
-    train_images, train_labels, test_images, test_labels = utils.get_mnist()
-
-    model = GLN(
-        layer_sizes=[16, 16, 1], input_size=train_images.shape[1], context_map_size=4,
-        classes=10, base_predictor=None, learning_rate=1e-4, pred_clipping=1e-3,
-        weight_clipping=5.0, bias=True, context_bias=True
-    )
-
-    num_correct = 0
-    for n in range(test_images.shape[0] // 100):
-        prediction = model.predict(test_images[n * 100: (n + 1) * 100])
-        num_correct += np.count_nonzero(prediction == test_labels[n * 100: (n + 1) * 100])
-    print('Accuracy:', num_correct / test_images.shape[0])
-
-    start = time.time()
-    num_epochs = 1
-    batch_size = 10
-    for n in range((num_epochs * train_images.shape[0]) // batch_size):
-        # if n > 0 and n % 100 == 0:
-        #     num_correct = 0
-        #     for n in range(test_images.shape[0] // 100):
-        #         prediction = model.predict(test_images[n * 100: (n + 1) * 100])
-        #         num_correct += np.count_nonzero(prediction == test_labels[n * 100: (n + 1) * 100])
-        #     print('Accuracy:', num_correct / test_images.shape[0])
-
-        indices = np.arange(n * batch_size, (n + 1) * batch_size) % train_images.shape[0]
-        model.predict(train_images[indices], train_labels[indices])
-    print('Time:', time.time() - start)
-
-    num_correct = 0
-    for n in range(test_images.shape[0] // 100):
-        prediction = model.predict(test_images[n * 100: (n + 1) * 100])
-        num_correct += np.count_nonzero(prediction == test_labels[n * 100: (n + 1) * 100])
-    print('Accuracy:', num_correct / test_images.shape[0])
-
-
-if __name__ == '__main__':
-    main()

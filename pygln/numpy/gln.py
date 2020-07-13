@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Optional, Sequence
 from sklearn.preprocessing import label_binarize
 
 from ..base import GLNBase
@@ -227,7 +227,7 @@ class GLN(GLNBase):
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
-                 classes: Optional[Union[int, Sequence[object]]] = None,
+                 num_classes: Optional[int] = None,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: float = 1e-2,
@@ -235,7 +235,7 @@ class GLN(GLNBase):
                  weight_clipping: float = 5.0,
                  bias: bool = True,
                  context_bias: bool = True):
-        super().__init__(layer_sizes, input_size, context_map_size, classes,
+        super().__init__(layer_sizes, input_size, context_map_size, num_classes,
                          base_predictor, learning_rate, pred_clipping,
                          weight_clipping, bias, context_bias)
 
@@ -268,7 +268,7 @@ class GLN(GLNBase):
 
         # Target
         if target is not None:
-            target = label_binarize(target, classes=self.classes)
+            target = label_binarize(target, classes=list(range(self.num_classes)))
 
         # Base logits
         base_preds = np.clip(base_preds,

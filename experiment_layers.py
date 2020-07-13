@@ -40,7 +40,7 @@ with open(f'results/{backend}_layers.csv', 'w') as file:
                 # Model
                 model = GLN(
                     backend=backend, layer_sizes=layer_sizes, input_size=train_images.shape[1],
-                    context_map_size=4, classes=10, base_predictor=None, learning_rate=1e-4,
+                    context_map_size=4, num_classes=10, base_predictor=None, learning_rate=1e-4,
                     pred_clipping=1e-3, weight_clipping=5.0, bias=True, context_bias=True
                 )
 

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
-from typing import Callable, Optional, Sequence, Union
+from typing import Callable, Optional, Sequence
 
 
 class OnlineUpdateModel(ABC):
@@ -8,7 +8,8 @@ class OnlineUpdateModel(ABC):
 
     @abstractmethod
     def predict(self, input, target=None):
-        """Predict the class for the given inputs, and optionally update the weights.
+        """
+        Predict the class for the given inputs, and optionally update the weights.
 
         Args:
             input: Batch of input instances.
@@ -28,7 +29,7 @@ class GLNBase(OnlineUpdateModel):
         layer_sizes: Sequence[int],
         input_size: int,
         context_map_size: int = 4,
-        classes: Optional[Union[int, Sequence[object]]] = None,
+        num_classes: Optional[int] = None,
         base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         learning_rate: float = 1e-4,
         pred_clipping: float = 1e-3,
@@ -48,17 +49,11 @@ class GLNBase(OnlineUpdateModel):
         assert context_map_size >= 2
         self.context_map_size = context_map_size
 
-        if classes is None:
+        if num_classes is None:
             self.num_classes = 1
-            self.classes = None
-        elif isinstance(classes, int):
-            assert classes >= 2
-            self.num_classes = classes
-            self.classes = None
         else:
-            assert len(classes) >= 2
-            self.num_classes = len(classes)
-            self.classes = tuple(classes)
+            assert num_classes >= 2
+            self.num_classes = num_classes
 
         if base_predictor is None:
             self.base_predictor = (lambda x: x)

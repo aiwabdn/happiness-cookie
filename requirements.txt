@@ -4,7 +4,7 @@ jupyter
 numpy
 pandas
 scikit-learn
-scipy == 1.4.1
+scipy
 tensorflow
 torch
 torchvision
