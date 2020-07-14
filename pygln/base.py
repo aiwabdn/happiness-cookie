@@ -94,4 +94,3 @@ class GLNBase(OnlineUpdateModel):
 
         self.bias = bias
         self.context_bias = context_bias
-        self.return_probs = return_probs

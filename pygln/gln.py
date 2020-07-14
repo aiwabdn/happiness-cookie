@@ -36,25 +36,25 @@ def GLN(backend: str,
         from pygln.jax import GLN
         return GLN(layer_sizes, input_size, context_map_size, num_classes,
                    base_predictor, learning_rate, pred_clipping,
-                   weight_clipping, bias, context_bias, return_probs)
+                   weight_clipping, bias, context_bias)
 
     elif backend == 'numpy':
         from pygln.numpy import GLN
         return GLN(layer_sizes, input_size, context_map_size, num_classes,
                    base_predictor, learning_rate, pred_clipping,
-                   weight_clipping, bias, context_bias, return_probs)
+                   weight_clipping, bias, context_bias)
 
     elif backend == 'pytorch':
         from pygln.pytorch import GLN
         return GLN(layer_sizes, input_size, context_map_size, num_classes,
                    base_predictor, learning_rate, pred_clipping,
-                   weight_clipping, bias, context_bias, return_probs)
+                   weight_clipping, bias, context_bias)
 
     elif backend == 'tf':
         from pygln.tf import GLN
         return GLN(layer_sizes, input_size, context_map_size, num_classes,
                    base_predictor, learning_rate, pred_clipping,
-                   weight_clipping, bias, context_bias, return_probs)
+                   weight_clipping, bias, context_bias)
 
     else:
         raise NotImplementedError(f"No implementation for backend {backend}.")

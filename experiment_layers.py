@@ -4,7 +4,7 @@ import os
 from pygln import GLN, utils
 
 
-backend = 'tf'
+backend = 'pytorch'
 num_runs = 5
 num_epochs = 1
 batch_size = 10
