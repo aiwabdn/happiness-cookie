@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from copy import deepcopy
 from pygln.utils import evaluate_mnist
-from pygln.gln import GLN
+from pygln import GLN
 
 
 # %%

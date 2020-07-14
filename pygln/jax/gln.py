@@ -190,6 +190,26 @@ class Linear(OnlineUpdateModule):
 
 
 class GLN(GLNBase):
+    """
+    JAX implementation of Gated Linear Networks (https://arxiv.org/abs/1910.01526).
+
+    Args:
+        layer_sizes (list[int >= 1]): List of layer output sizes.
+        input_size (int >= 1): Input vector size.
+        context_map_size (int >= 1): Context dimension, i.e. number of context halfspaces.
+        num_classes (int >= 2): If given, turns GLN into a multi-class classifier by internally
+            creating N one-vs-all binary GLN classifiers and return the argmax as output class.
+        base_predictor (np.array[n] -> np.array[k]): If given, maps the n-dim input vector to a
+            corresponding k-dim vector of base predictions (could be a constant prior), instead of
+            simply using the clipped input vector itself.
+        learning_rate (float > 0.0): Update learning rate.
+        pred_clipping (0.0 < float < 0.5): Clip predictions into [p, 1 - p] at each layer.
+        weight_clipping (float > 0.0): Clip weights into [-w, w] after each update.
+        bias (bool): Whether to add a bias prediction in each layer.
+        context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
+        seed (int): Random seed.
+    """
+
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
@@ -201,8 +221,8 @@ class GLN(GLNBase):
                  weight_clipping: float = 5.0,
                  bias: bool = True,
                  context_bias: bool = True,
-                 return_probs: bool = False,
                  seed: Optional[int] = None):
+
         super().__init__(layer_sizes, input_size, context_map_size,
                          num_classes, base_predictor, learning_rate,
                          pred_clipping, weight_clipping, bias, context_bias)
@@ -247,7 +267,21 @@ class GLN(GLNBase):
         # JAX-compiled update function
         self._jax_update = jax.jit(fun=self._predict)
 
-    def predict(self, input, target=None):
+    def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False):
+        """
+        Predict the class for the given inputs, and optionally update the weights.
+
+        Args:
+            input (np.array[B, N]): Batch of B N-dim float input vectors.
+            target (np.array[B]): Optional batch of B bool/int target class labels which, if given,
+                triggers an online update if given.
+            return_probs (bool): Whether to return the classification probability (for each
+                one-vs-all classifier if num_classes given) instead of the class.
+
+        Returns:
+            Predicted class per input instance, or classification probabilities if return_probs set.
+        """
+
         # Base predictions
         base_preds = self.base_predictor(input)
         base_preds = jnp.asarray(base_preds, dtype=float)
@@ -259,7 +293,8 @@ class GLN(GLNBase):
             # Predict without update
             prediction = self._jax_predict(params=self.params,
                                            base_preds=base_preds,
-                                           context=context)
+                                           context=context,
+                                           return_probs=return_probs)
 
         else:
             # Target
@@ -272,11 +307,12 @@ class GLN(GLNBase):
             self.params, prediction = self._jax_update(params=self.params,
                                                        base_preds=base_preds,
                                                        context=input,
-                                                       target=target)
+                                                       target=target,
+                                                       return_probs=return_probs)
 
         return prediction
 
-    def _predict(self, params, base_preds, context, target=None):
+    def _predict(self, params, base_preds, context, target=None, return_probs=False):
         # Base logits
         base_preds = jnp.clip(base_preds,
                               a_min=self.pred_clipping,
@@ -308,13 +344,12 @@ class GLN(GLNBase):
         logits = jnp.squeeze(logits, axis=-1)
 
         # Output prediction
-        if self.return_probs:
+        if return_probs:
             prediction = jnn.sigmoid(logits)
+        elif self.num_classes == 1:
+            prediction = jnp.squeeze(logits, axis=-1) > 0.0
         else:
-            if self.num_classes == 1:
-                prediction = jnp.squeeze(logits, axis=-1) > 0.0
-            else:
-                prediction = jnp.argmax(logits, axis=1)
+            prediction = jnp.argmax(logits, axis=1)
 
         if target is None:
             return prediction

@@ -142,6 +142,25 @@ class Linear(nn.Module):
 
 
 class GLN(nn.Module, GLNBase):
+    """
+    PyTorch implementation of Gated Linear Networks (https://arxiv.org/abs/1910.01526).
+
+    Args:
+        layer_sizes (list[int >= 1]): List of layer output sizes.
+        input_size (int >= 1): Input vector size.
+        context_map_size (int >= 1): Context dimension, i.e. number of context halfspaces.
+        num_classes (int >= 2): If given, turns GLN into a multi-class classifier by internally
+            creating N one-vs-all binary GLN classifiers and return the argmax as output class.
+        base_predictor (np.array[n] -> np.array[k]): If given, maps the n-dim input vector to a
+            corresponding k-dim vector of base predictions (could be a constant prior), instead of
+            simply using the clipped input vector itself.
+        learning_rate (float > 0.0): Update learning rate.
+        pred_clipping (0.0 < float < 0.5): Clip predictions into [p, 1 - p] at each layer.
+        weight_clipping (float > 0.0): Clip weights into [-w, w] after each update.
+        bias (bool): Whether to add a bias prediction in each layer.
+        context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
+    """
+
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
@@ -153,8 +172,8 @@ class GLN(nn.Module, GLNBase):
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,
-                 context_bias: bool = True,
-                 return_probs: bool = False):
+                 context_bias: bool = True):
+
         nn.Module.__init__(self)
         GLNBase.__init__(self, layer_sizes, input_size, context_map_size,
                          classes, base_predictor, learning_rate, pred_clipping,
@@ -178,7 +197,21 @@ class GLN(nn.Module, GLNBase):
         for layer in self.layers:
             layer.set_learning_rate(lr)
 
-    def predict(self, input: torch.Tensor, target: torch.Tensor = None):
+    def predict(self, input: torch.Tensor, target: torch.Tensor = None, return_probs: bool = False):
+        """
+        Predict the class for the given inputs, and optionally update the weights.
+
+        Args:
+            input (np.array[B, N]): Batch of B N-dim float input vectors.
+            target (np.array[B]): Optional batch of B bool/int target class labels which, if given,
+                triggers an online update if given.
+            return_probs (bool): Whether to return the classification probability (for each
+                one-vs-all classifier if num_classes given) instead of the class.
+
+        Returns:
+            Predicted class per input instance, or classification probabilities if return_probs set.
+        """
+
         # Base predictions
         base_preds = self.base_predictor(input)
 
@@ -204,13 +237,12 @@ class GLN(nn.Module, GLNBase):
                                    target=target)
 
         logits = torch.squeeze(logits)
-        if self.return_probs:
+        if return_probs:
             return torch.sigmoid(logits)
+        elif self.num_classes == 1:
+            return logits > 0
         else:
-            if self.num_classes == 1:
-                (logits > 0).int()
-            else:
-                torch.argmax(logits, dim=1)
+            return torch.argmax(logits, dim=1)
 
     def extra_repr(self):
         return 'num_classes={}, num_layers={}'.format(self.num_classes,
