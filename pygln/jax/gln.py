@@ -273,13 +273,14 @@ class GLN(GLNBase):
 
         Args:
             input (np.array[B, N]): Batch of B N-dim float input vectors.
-            target (np.array[B]): Optional batch of B bool/int target class labels which, if given,
-                triggers an online update if given.
+            target (np.array[B]): Optional batch of B target class labels (bool, or int if
+                num_classes given) which, if given, triggers an online update if given.
             return_probs (bool): Whether to return the classification probability (for each
                 one-vs-all classifier if num_classes given) instead of the class.
 
         Returns:
-            Predicted class per input instance, or classification probabilities if return_probs set.
+            Predicted class per input instance (bool, or int if num_classes given),
+            or classification probabilities if return_probs set.
         """
 
         # Base predictions
