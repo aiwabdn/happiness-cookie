@@ -21,7 +21,7 @@ class Linear(nn.Module):
                  input_size: int,
                  context_size: int,
                  context_map_size: int = 4,
-                 num_classes: int = 2,
+                 num_classes: int = 1,
                  learning_rate: float = 0.01,
                  pred_clipping: float = 0.001,
                  weight_clipping: float = 5.0,
@@ -160,7 +160,6 @@ class GLN(nn.Module, GLNBase):
         bias (bool): Whether to add a bias prediction in each layer.
         context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
     """
-
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
@@ -194,10 +193,19 @@ class GLN(nn.Module, GLNBase):
             previous_size = size
 
     def set_learning_rate(self, lr: float):
+        """
+        Set the learning rate for all layers in the model
+
+        Args:
+            lr (0.0 < float < 1.0): Value to set as learning rate
+        """
         for layer in self.layers:
             layer.set_learning_rate(lr)
 
-    def predict(self, input: torch.Tensor, target: torch.Tensor = None, return_probs: bool = False):
+    def predict(self,
+                input: torch.Tensor,
+                target: torch.Tensor = None,
+                return_probs: bool = False):
         """
         Predict the class for the given inputs, and optionally update the weights.
 
@@ -237,7 +245,7 @@ class GLN(nn.Module, GLNBase):
                                    context=context,
                                    target=target)
 
-        logits = torch.squeeze(logits)
+        logits = torch.squeeze(logits, dim=1)
         if return_probs:
             return torch.sigmoid(logits)
         elif self.num_classes == 1:

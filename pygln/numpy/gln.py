@@ -121,7 +121,7 @@ class Linear():
                  input_size: int,
                  context_size: int,
                  context_map_size: int = 4,
-                 num_classes: int = 2,
+                 num_classes: int = 1,
                  learning_rate: float = 0.01,
                  pred_clipping: float = 0.001,
                  weight_clipping: float = 5.0,
@@ -205,7 +205,8 @@ class Linear():
                     np.arange(self.num_classes).reshape(-1, 1, 1, 1),
                     np.arange(self.size).reshape(1, -1, 1, 1),
                     np.expand_dims(current_context_indices, axis=-1)
-                ], -np.expand_dims(np.transpose(update_value, [2, 1, 0, 3]),
+                ], -np.expand_dims(np.transpose(update_value,
+                                                np.array([2, 1, 0, 3])),
                                    axis=-2))
             self._weights = np.clip(self._weights, -self.weight_clipping,
                                     self.weight_clipping)
@@ -238,7 +239,6 @@ class GLN(GLNBase):
         bias (bool): Whether to add a bias prediction in each layer.
         context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
     """
-
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
@@ -272,10 +272,19 @@ class GLN(GLNBase):
             previous_size = size
 
     def set_learning_rate(self, lr: float):
+        """
+        Set the learning rate for all layers in the model
+
+        Args:
+            lr (0.0 < float < 1.0): Value to set as learning rate
+        """
         for layer in self.layers:
             layer.set_learning_rate(lr)
 
-    def predict(self, input: np.ndarray, target: np.ndarray = None, return_probs: bool = False):
+    def predict(self,
+                input: np.ndarray,
+                target: np.ndarray = None,
+                return_probs: bool = False):
         """
         Predict the class for the given inputs, and optionally update the weights.
 
@@ -318,10 +327,10 @@ class GLN(GLNBase):
                                    context=context,
                                    target=target)
 
-        logits = np.squeeze(logits)
+        logits = np.squeeze(logits, axis=1)
         if return_probs:
             return sigmoid(logits)
         elif self.num_classes == 1:
-            return logits > 0.0
+            return logits > 0
         else:
             return np.argmax(logits, axis=1)

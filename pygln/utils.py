@@ -120,7 +120,7 @@ def evaluate_mnist(model,
         outputs = np.vstack(outputs)
 
         # define metrics
-        outputs = outputs.argmax(axis=1).flatten()
+        outputs = outputs.flatten()
         accuracy = 100 * sum(y_test == outputs) / len(y_test)
         accuracy_after_each_epoch.append(accuracy)
 
