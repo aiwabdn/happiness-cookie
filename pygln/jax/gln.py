@@ -6,14 +6,12 @@ from typing import Callable, Optional, Sequence
 
 from pygln.base import GLNBase
 
-
 jax.config.update("jax_debug_nans", True)
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_numpy_rank_promotion", "raise")
 
 
 class DynamicParameter(object):
-
     def initialize(self):
         return 0.0
 
@@ -22,7 +20,6 @@ class DynamicParameter(object):
 
 
 class ConstantParameter(DynamicParameter):
-
     def __init__(self, constant_value):
         DynamicParameter.__init__(self)
 
@@ -34,20 +31,14 @@ class ConstantParameter(DynamicParameter):
 
 
 class PaperLearningRate(DynamicParameter):
-
     def value(self, step):
         step = super().value(step)
         return step, jnp.minimum(100.0 / step, 0.01)
 
 
 class OnlineUpdateModule(object):
-
-    def __init__(
-        self,
-        learning_rate: DynamicParameter,
-        pred_clipping: float,
-        weight_clipping: float
-    ):
+    def __init__(self, learning_rate: DynamicParameter, pred_clipping: float,
+                 weight_clipping: float):
         assert isinstance(learning_rate, DynamicParameter)
         assert 0.0 < pred_clipping < 1.0
         assert weight_clipping >= 1.0
@@ -66,20 +57,10 @@ class OnlineUpdateModule(object):
 
 
 class Linear(OnlineUpdateModule):
-
-    def __init__(
-        self,
-        size: int,
-        input_size: int,
-        context_size: int,
-        context_map_size: int,
-        num_classes: int,
-        learning_rate: DynamicParameter,
-        pred_clipping: float,
-        weight_clipping: float,
-        bias: bool,
-        context_bias: bool
-    ):
+    def __init__(self, size: int, input_size: int, context_size: int,
+                 context_map_size: int, num_classes: int,
+                 learning_rate: DynamicParameter, pred_clipping: float,
+                 weight_clipping: float, bias: bool, context_bias: bool):
         super().__init__(learning_rate, pred_clipping, weight_clipping)
 
         assert size > 0 and input_size > 0 and context_size > 0
@@ -100,67 +81,79 @@ class Linear(OnlineUpdateModule):
 
         logits_size = self.input_size + int(self.bias)
         num_context_indices = 1 << self.context_map_size
-        weights_shape = (self.num_classes, self.size, num_context_indices, logits_size)
-        params['weights'] = jnp.full(shape=weights_shape, fill_value=(1.0 / logits_size))
+        weights_shape = (self.num_classes, self.size, num_context_indices,
+                         logits_size)
+        params['weights'] = jnp.full(shape=weights_shape,
+                                     fill_value=(1.0 / logits_size))
 
         if self.bias:
             rng, rng1 = jnr.split(key=rng, num=2)
             bias_shape = (1, self.num_classes, 1)
             params['bias'] = jnr.uniform(
-                key=rng1, shape=bias_shape, minval=jsp.special.logit(self.pred_clipping),
-                maxval=jsp.special.logit(1.0 - self.pred_clipping)
-            )
+                key=rng1,
+                shape=bias_shape,
+                minval=jsp.special.logit(self.pred_clipping),
+                maxval=jsp.special.logit(1.0 - self.pred_clipping))
 
-        context_maps_shape = (
-            1, self.num_classes, self.size, self.context_map_size, self.context_size
-        )
+        context_maps_shape = (1, self.num_classes, self.size,
+                              self.context_map_size, self.context_size)
         if self.context_bias:
             rng1, rng2 = jnr.split(key=rng, num=2)
             context_maps = jnr.normal(key=rng1, shape=context_maps_shape)
             norm = jnp.linalg.norm(context_maps, axis=-1, keepdims=True)
             params['context_maps'] = context_maps / norm
 
-            context_bias_shape = (1, self.num_classes, self.size, self.context_map_size)
-            params['context_bias'] = jnr.normal(key=rng2, shape=context_bias_shape)
+            context_bias_shape = (1, self.num_classes, self.size,
+                                  self.context_map_size)
+            params['context_bias'] = jnr.normal(key=rng2,
+                                                shape=context_bias_shape)
 
         else:
-            params['context_maps'] = jnr.normal(key=rng, shape=context_maps_shape)
+            params['context_maps'] = jnr.normal(key=rng,
+                                                shape=context_maps_shape)
 
         return params
 
     def predict(self, params, logits, context, target=None):
-        context = jnp.expand_dims(jnp.expand_dims(jnp.expand_dims(context, axis=1), axis=1), axis=1)
+        context = jnp.expand_dims(jnp.expand_dims(jnp.expand_dims(context,
+                                                                  axis=1),
+                                                  axis=1),
+                                  axis=1)
         context_bias = params.get('context_bias', 0.0)
-        context_index = (params['context_maps'] * context).sum(axis=-1) > context_bias
+        context_index = (params['context_maps'] *
+                         context).sum(axis=-1) > context_bias
 
-        context_map_values = jnp.asarray([[[[1 << n for n in range(self.context_map_size)]]]])
+        context_map_values = jnp.asarray(
+            [[[[1 << n for n in range(self.context_map_size)]]]])
         context_index = jnp.where(context_index, context_map_values, 0)
         context_index = context_index.sum(axis=-1, keepdims=True)
 
         batch_size = logits.shape[0]
-        class_neuron_index = jnp.asarray(
-            [[[[c, n] for n in range(self.size)] for c in range(self.num_classes)]]
-        )
-        class_neuron_index = jnp.tile(class_neuron_index, reps=(batch_size, 1, 1, 1))
-        context_index = jnp.concatenate([class_neuron_index, context_index], axis=-1)
+        class_neuron_index = jnp.asarray([[[[c, n] for n in range(self.size)]
+                                           for c in range(self.num_classes)]])
+        class_neuron_index = jnp.tile(class_neuron_index,
+                                      reps=(batch_size, 1, 1, 1))
+        context_index = jnp.concatenate([class_neuron_index, context_index],
+                                        axis=-1)
 
-        dims = lax.GatherDimensionNumbers(
-            offset_dims=(3,), collapsed_slice_dims=(0, 1, 2), start_index_map=(0, 1, 2)
-        )
-        weights = lax.gather(
-            operand=params['weights'], start_indices=context_index, dimension_numbers=dims,
-            slice_sizes=(1, 1, 1, self.input_size + int(self.bias))
-        )
+        dims = lax.GatherDimensionNumbers(offset_dims=(3, ),
+                                          collapsed_slice_dims=(0, 1, 2),
+                                          start_index_map=(0, 1, 2))
+        weights = lax.gather(operand=params['weights'],
+                             start_indices=context_index,
+                             dimension_numbers=dims,
+                             slice_sizes=(1, 1, 1,
+                                          self.input_size + int(self.bias)))
 
         bias = jnp.tile(params['bias'], reps=(batch_size, 1, 1))
         logits = jnp.concatenate([logits, bias], axis=-1)
         logits = jnp.expand_dims(logits, axis=-1)
 
         output_logits = jnp.matmul(weights, logits)
-        output_logits = jnp.clip(
-            output_logits, a_min=jsp.special.logit(self.pred_clipping),
-            a_max=jsp.special.logit(1.0 - self.pred_clipping)
-        )
+        output_logits = jnp.clip(output_logits,
+                                 a_min=jsp.special.logit(self.pred_clipping),
+                                 a_max=jsp.special.logit(1.0 -
+                                                         self.pred_clipping))
 
         if target is None:
             return jnp.squeeze(output_logits, axis=-1)
@@ -169,51 +162,50 @@ class Linear(OnlineUpdateModule):
             logits = jnp.expand_dims(jnp.squeeze(logits, axis=-1), axis=-2)
             output_preds = jnn.sigmoid(output_logits)
             target = jnp.expand_dims(jnp.expand_dims(target, axis=-1), axis=-1)
-            params['lr_step'], learning_rate = self.learning_rate.value(params['lr_step'])
+            params['lr_step'], learning_rate = self.learning_rate.value(
+                params['lr_step'])
             delta = learning_rate * (target - output_preds) * logits
 
             dims = lax.ScatterDimensionNumbers(
-                update_window_dims=(3,), inserted_window_dims=(0, 1, 2),
-                scatter_dims_to_operand_dims=(0, 1, 2)
-            )
+                update_window_dims=(3, ),
+                inserted_window_dims=(0, 1, 2),
+                scatter_dims_to_operand_dims=(0, 1, 2))
 
             if self.weight_clipping is None:
                 params['weights'] = lax.scatter_add(
-                    operand=params['weights'], scatter_indices=context_index, updates=delta,
-                    dimension_numbers=dims
-                )
+                    operand=params['weights'],
+                    scatter_indices=context_index,
+                    updates=delta,
+                    dimension_numbers=dims)
             else:
-                weights = jnp.clip(
-                    weights + delta, a_min=-self.weight_clipping, a_max=self.weight_clipping
-                )
-                params['weights'] = lax.scatter(
-                    operand=params['weights'], scatter_indices=context_index, updates=weights,
-                    dimension_numbers=dims
-                )
+                weights = jnp.clip(weights + delta,
+                                   a_min=-self.weight_clipping,
+                                   a_max=self.weight_clipping)
+                params['weights'] = lax.scatter(operand=params['weights'],
+                                                scatter_indices=context_index,
+                                                updates=weights,
+                                                dimension_numbers=dims)
 
             return params, jnp.squeeze(output_logits, axis=-1)
 
 
 class GLN(GLNBase):
-
-    def __init__(
-        self,
-        layer_sizes: Sequence[int],
-        input_size: int,
-        context_map_size: int = 4,
-        num_classes: Optional[int] = None,
-        base_predictor: Optional[Callable[[ndarray], ndarray]] = None,
-        learning_rate: float = 1e-4,
-        pred_clipping: float = 1e-3,
-        weight_clipping: float = 5.0,
-        bias: bool = True,
-        context_bias: bool = True,
-        seed: Optional[int] = None
-    ):
-        super().__init__(
-            layer_sizes, input_size, context_map_size, num_classes, base_predictor,
-            learning_rate, pred_clipping, weight_clipping, bias, context_bias
-        )
+    def __init__(self,
+                 layer_sizes: Sequence[int],
+                 input_size: int,
+                 context_map_size: int = 4,
+                 num_classes: Optional[int] = None,
+                 base_predictor: Optional[Callable[[ndarray], ndarray]] = None,
+                 learning_rate: float = 1e-4,
+                 pred_clipping: float = 1e-3,
+                 weight_clipping: float = 5.0,
+                 bias: bool = True,
+                 context_bias: bool = True,
+                 return_probs: bool = False,
+                 seed: Optional[int] = None):
+        super().__init__(layer_sizes, input_size, context_map_size,
+                         num_classes, base_predictor, learning_rate,
+                         pred_clipping, weight_clipping, bias, context_bias)
 
         # Learning rate as dynamic parameter
         if self.learning_rate == 'paper':
@@ -231,17 +223,20 @@ class GLN(GLNBase):
 
         # Initialize layers
         self.layers = list()
-        self.params['rng'], *rngs = jnr.split(
-            key=self.params['rng'], num=(len(self.layer_sizes) + 1)
-        )
+        self.params['rng'], *rngs = jnr.split(key=self.params['rng'],
+                                              num=(len(self.layer_sizes) + 1))
         previous_size = self.base_pred_size
         for n, (size, rng) in enumerate(zip(self.layer_sizes, rngs)):
-            layer = Linear(
-                size=size, input_size=previous_size, context_size=self.input_size,
-                context_map_size=self.context_map_size, num_classes=self.num_classes,
-                learning_rate=self.learning_rate, pred_clipping=self.pred_clipping,
-                weight_clipping=self.weight_clipping, bias=self.bias, context_bias=self.context_bias
-            )
+            layer = Linear(size=size,
+                           input_size=previous_size,
+                           context_size=self.input_size,
+                           context_map_size=self.context_map_size,
+                           num_classes=self.num_classes,
+                           learning_rate=self.learning_rate,
+                           pred_clipping=self.pred_clipping,
+                           weight_clipping=self.weight_clipping,
+                           bias=self.bias,
+                           context_bias=self.context_bias)
             self.layers.append(layer)
             self.params[f'layer{n}'] = layer.initialize(rng=rng)
             previous_size = size
@@ -262,9 +257,9 @@ class GLN(GLNBase):
 
         if target is None:
             # Predict without update
-            prediction = self._jax_predict(
-                params=self.params, base_preds=base_preds, context=context
-            )
+            prediction = self._jax_predict(params=self.params,
+                                           base_preds=base_preds,
+                                           context=context)
 
         else:
             # Target
@@ -274,17 +269,18 @@ class GLN(GLNBase):
                 target = jnp.asarray(target, dtype=int)
 
             # Predict with update
-            self.params, prediction = self._jax_update(
-                params=self.params, base_preds=base_preds, context=input, target=target
-            )
+            self.params, prediction = self._jax_update(params=self.params,
+                                                       base_preds=base_preds,
+                                                       context=input,
+                                                       target=target)
 
         return prediction
 
     def _predict(self, params, base_preds, context, target=None):
         # Base logits
-        base_preds = jnp.clip(
-            base_preds, a_min=self.pred_clipping, a_max=(1.0 - self.pred_clipping)
-        )
+        base_preds = jnp.clip(base_preds,
+                              a_min=self.pred_clipping,
+                              a_max=(1.0 - self.pred_clipping))
         logits = jsp.special.logit(base_preds)
         logits = jnp.expand_dims(logits, axis=1)
         logits = jnp.tile(logits, reps=(1, self.num_classes, 1))
@@ -299,19 +295,26 @@ class GLN(GLNBase):
         # Layers
         if target is None:
             for n, layer in enumerate(self.layers):
-                logits = layer.predict(params=params[f'layer{n}'], logits=logits, context=context)
+                logits = layer.predict(params=params[f'layer{n}'],
+                                       logits=logits,
+                                       context=context)
         else:
             for n, layer in enumerate(self.layers):
                 params[f'layer{n}'], logits = layer.predict(
-                    params=params[f'layer{n}'], logits=logits, context=context, target=target
-                )
+                    params=params[f'layer{n}'],
+                    logits=logits,
+                    context=context,
+                    target=target)
         logits = jnp.squeeze(logits, axis=-1)
 
         # Output prediction
-        if self.num_classes == 1:
-            prediction = jnp.squeeze(logits, axis=-1) > 0.0
+        if self.return_probs:
+            prediction = jnn.sigmoid(logits)
         else:
-            prediction = jnp.argmax(logits, axis=1)
+            if self.num_classes == 1:
+                prediction = jnp.squeeze(logits, axis=-1) > 0.0
+            else:
+                prediction = jnp.argmax(logits, axis=1)
 
         if target is None:
             return prediction

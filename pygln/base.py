@@ -5,7 +5,6 @@ from typing import Callable, Optional, Sequence
 
 class OnlineUpdateModel(ABC):
     """Base class for online-update models, shared by all backend implementations."""
-
     @abstractmethod
     def predict(self, input, target=None):
         """
@@ -23,20 +22,19 @@ class OnlineUpdateModel(ABC):
 
 class GLNBase(OnlineUpdateModel):
     """Base class for Gated Linear Network implementations (https://arxiv.org/abs/1910.01526)."""
-
-    def __init__(
-        self,
-        layer_sizes: Sequence[int],
-        input_size: int,
-        context_map_size: int = 4,
-        num_classes: Optional[int] = None,
-        base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-        learning_rate: float = 1e-4,
-        pred_clipping: float = 1e-3,
-        weight_clipping: float = 5.0,
-        bias: bool = True,
-        context_bias: bool = True
-    ):
+    def __init__(self,
+                 layer_sizes: Sequence[int],
+                 input_size: int,
+                 context_map_size: int = 4,
+                 num_classes: Optional[int] = None,
+                 base_predictor: Optional[
+                     Callable[[np.ndarray], np.ndarray]] = None,
+                 learning_rate: float = 1e-4,
+                 pred_clipping: float = 1e-3,
+                 weight_clipping: float = 5.0,
+                 bias: bool = True,
+                 context_bias: bool = True,
+                 return_probs: bool = False):
         """... to be done..."""
         super().__init__()
 
@@ -77,3 +75,4 @@ class GLNBase(OnlineUpdateModel):
 
         self.bias = bias
         self.context_bias = context_bias
+        self.return_probs = return_probs

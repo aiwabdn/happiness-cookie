@@ -31,12 +31,9 @@ class Linear(nn.Module):
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert num_classes >= 2
-        assert learning_rate > 0.0
-        assert 0.0 < pred_clipping < 1.0
-        assert weight_clipping >= 1.0
+        assert num_classes >= 1
 
-        self.num_classes = num_classes if num_classes > 2 else 1
+        self.num_classes = num_classes
         self.learning_rate = learning_rate
         # clipping value for predictions
         self.pred_clipping = pred_clipping
@@ -156,7 +153,8 @@ class GLN(nn.Module, GLNBase):
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,
-                 context_bias: bool = True):
+                 context_bias: bool = True,
+                 return_probs: bool = False):
         nn.Module.__init__(self)
         GLNBase.__init__(self, layer_sizes, input_size, context_map_size,
                          classes, base_predictor, learning_rate, pred_clipping,
@@ -204,7 +202,15 @@ class GLN(nn.Module, GLNBase):
             logits = layer.predict(logit=logits,
                                    context=context,
                                    target=target)
-        return torch.sigmoid(torch.squeeze(logits))
+
+        logits = torch.squeeze(logits)
+        if self.return_probs:
+            return torch.sigmoid(logits)
+        else:
+            if self.num_classes == 1:
+                (logits > 0).int()
+            else:
+                torch.argmax(logits, dim=1)
 
     def extra_repr(self):
         return 'num_classes={}, num_layers={}'.format(self.num_classes,

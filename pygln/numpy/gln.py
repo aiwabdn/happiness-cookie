@@ -131,12 +131,9 @@ class Linear():
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert num_classes >= 2
-        assert learning_rate > 0.0
-        assert 0.0 < pred_clipping < 1.0
-        assert weight_clipping >= 1.0
+        assert num_classes >= 1
 
-        self.num_classes = num_classes if num_classes > 2 else 1
+        self.num_classes = num_classes
         self.learning_rate = learning_rate
         # clipping value for predictions
         self.pred_clipping = pred_clipping
@@ -234,10 +231,11 @@ class GLN(GLNBase):
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,
-                 context_bias: bool = True):
-        super().__init__(layer_sizes, input_size, context_map_size, num_classes,
-                         base_predictor, learning_rate, pred_clipping,
-                         weight_clipping, bias, context_bias)
+                 context_bias: bool = True,
+                 return_probs: bool = False):
+        super().__init__(layer_sizes, input_size, context_map_size,
+                         num_classes, base_predictor, learning_rate,
+                         pred_clipping, weight_clipping, bias, context_bias)
 
         # Initialize layers
         self.layers = list()
@@ -268,7 +266,8 @@ class GLN(GLNBase):
 
         # Target
         if target is not None:
-            target = label_binarize(target, classes=list(range(self.num_classes)))
+            target = label_binarize(target,
+                                    classes=list(range(self.num_classes)))
 
         # Base logits
         base_preds = np.clip(base_preds,
@@ -285,4 +284,11 @@ class GLN(GLNBase):
                                    context=context,
                                    target=target)
 
-        return sigmoid(np.squeeze(logits))
+        logits = np.squeeze(logits)
+        if self.return_probs:
+            return sigmoid(logits)
+        else:
+            if self.num_classes == 1:
+                return (logits > 0).astype(np.int)
+            else:
+                return np.argmax(logits, axis=1)
