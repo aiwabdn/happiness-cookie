@@ -201,11 +201,11 @@ class Linear():
                                                 axis=1)
 
             np.add.at(
-                self._weights, [
+                self._weights, (
                     np.arange(self.num_classes).reshape(-1, 1, 1, 1),
                     np.arange(self.size).reshape(1, -1, 1, 1),
                     np.expand_dims(current_context_indices, axis=-1)
-                ], -np.expand_dims(np.transpose(update_value,
+                ), -np.expand_dims(np.transpose(update_value,
                                                 np.array([2, 1, 0, 3])),
                                    axis=-2))
             self._weights = np.clip(self._weights, -self.weight_clipping,
