@@ -294,9 +294,7 @@ class GLN(tf.Module, GLNBase):
 
         if target is None:
             # Predict without update
-            prediction = self._tf_predict(base_preds=base_preds,
-                                          context=context,
-                                          return_probs=return_probs)
+            logits = self._tf_predict(base_preds=base_preds, context=context)
 
         else:
             # Target
@@ -306,14 +304,16 @@ class GLN(tf.Module, GLNBase):
                 target = tf.convert_to_tensor(target, dtype=self.target_dtype)
 
             # Predict with update
-            prediction = self._tf_update(base_preds=base_preds,
-                                         context=context,
-                                         target=target,
-                                         return_probs=return_probs)
+            logits = self._tf_update(base_preds=base_preds, context=context, target=target)
 
-        return prediction.numpy()
+        if return_probs:
+            return scipy.special.expit(logits)
+        elif self.num_classes == 1:
+            return np.squeeze(logits, axis=-1) > 0.0
+        else:
+            return np.argmax(logits, axis=1)
 
-    def _predict(self, base_preds, context, target=None, return_probs=False):
+    def _predict(self, base_preds, context, target=None):
         # Base logits
         base_preds = tf.clip_by_value(base_preds,
                                       clip_value_min=self.pred_clipping,
@@ -335,12 +335,4 @@ class GLN(tf.Module, GLNBase):
             logits = layer.predict(logits=logits,
                                    context=context,
                                    target=target)
-        logits = tf.squeeze(logits, axis=-1)
-
-        # Output prediction
-        if return_probs:
-            return tf.math.sigmoid(logits)
-        elif self.num_classes == 1:
-            return tf.squeeze(logits, axis=-1) > 0.0
-        else:
-            return tf.math.argmax(logits, axis=1)
+        return tf.squeeze(logits, axis=-1)

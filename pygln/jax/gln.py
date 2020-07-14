@@ -262,10 +262,10 @@ class GLN(GLNBase):
             previous_size = size
 
         # JAX-compiled predict function
-        self._jax_predict = jax.jit(fun=self._predict)
+        self._jax_predict = jax.jit(fun=self._predict, static_argnums=(3,))
 
         # JAX-compiled update function
-        self._jax_update = jax.jit(fun=self._predict)
+        self._jax_update = jax.jit(fun=self._predict, static_argnums=(3,))
 
     def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False):
         """
@@ -291,10 +291,7 @@ class GLN(GLNBase):
 
         if target is None:
             # Predict without update
-            prediction = self._jax_predict(params=self.params,
-                                           base_preds=base_preds,
-                                           context=context,
-                                           return_probs=return_probs)
+            prediction = self._jax_predict(self.params, base_preds, context, return_probs)
 
         else:
             # Target
@@ -304,15 +301,13 @@ class GLN(GLNBase):
                 target = jnp.asarray(target, dtype=int)
 
             # Predict with update
-            self.params, prediction = self._jax_update(params=self.params,
-                                                       base_preds=base_preds,
-                                                       context=input,
-                                                       target=target,
-                                                       return_probs=return_probs)
+            self.params, prediction = self._jax_update(
+                self.params, base_preds, input, return_probs, target=target
+            )
 
         return prediction
 
-    def _predict(self, params, base_preds, context, target=None, return_probs=False):
+    def _predict(self, params, base_preds, context, return_probs, target=None):
         # Base logits
         base_preds = jnp.clip(base_preds,
                               a_min=self.pred_clipping,
