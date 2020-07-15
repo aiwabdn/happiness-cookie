@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 from sklearn.preprocessing import label_binarize
 
 from ..base import GLNBase
@@ -8,6 +8,34 @@ from ..base import GLNBase
 
 def sigmoid(X: np.ndarray):
     return 1 / (1 + np.exp(-X))
+
+
+class DynamicParameter():
+    def __init__(self, name: Optional[str] = None):
+        self.step = 0
+
+    @property
+    def value(self):
+        self.step += 1
+        return self.step
+
+
+class ConstantParameter(DynamicParameter):
+    def __init__(self, constant_value: float, name: Optional[str] = None):
+        DynamicParameter.__init__(self, name)
+
+        assert isinstance(constant_value, float)
+        self.constant_value = constant_value
+
+    @property
+    def value(self):
+        return self.constant_value
+
+
+class PaperLearningRate(DynamicParameter):
+    @property
+    def value(self):
+        return min(100 / super().value, 0.01)
 
 
 class Neuron():
@@ -120,11 +148,11 @@ class Linear():
                  size: int,
                  input_size: int,
                  context_size: int,
-                 context_map_size: int = 4,
-                 num_classes: int = 1,
-                 learning_rate: float = 0.01,
-                 pred_clipping: float = 0.001,
-                 weight_clipping: float = 5.0,
+                 context_map_size: int,
+                 num_classes: int,
+                 learning_rate: DynamicParameter,
+                 pred_clipping: float,
+                 weight_clipping: float,
                  bias: bool = True,
                  context_bias: bool = True):
         super().__init__()
@@ -196,18 +224,18 @@ class Linear():
         if target is not None:
             sigmoids = sigmoid(output_logits)
             diff = sigmoids - np.expand_dims(target, axis=1)
-            update_value = self.learning_rate * np.expand_dims(
+            update_value = self.learning_rate.value * np.expand_dims(
                 diff, axis=-1) * np.expand_dims(np.swapaxes(logit, -1, -2),
                                                 axis=1)
 
             np.add.at(
-                self._weights, (
-                    np.arange(self.num_classes).reshape(-1, 1, 1, 1),
-                    np.arange(self.size).reshape(1, -1, 1, 1),
-                    np.expand_dims(current_context_indices, axis=-1)
-                ), -np.expand_dims(np.transpose(update_value,
-                                                np.array([2, 1, 0, 3])),
-                                   axis=-2))
+                self._weights,
+                (np.arange(self.num_classes).reshape(
+                    -1, 1, 1, 1), np.arange(self.size).reshape(1, -1, 1, 1),
+                 np.expand_dims(current_context_indices, axis=-1)),
+                -np.expand_dims(np.transpose(update_value,
+                                             np.array([2, 1, 0, 3])),
+                                axis=-2))
             self._weights = np.clip(self._weights, -self.weight_clipping,
                                     self.weight_clipping)
 
@@ -246,7 +274,7 @@ class GLN(GLNBase):
                  num_classes: Optional[int] = None,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
-                 learning_rate: float = 1e-2,
+                 learning_rate: Union[DynamicParameter, float] = 1e-2,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,
@@ -263,6 +291,15 @@ class GLN(GLNBase):
             self.base_bias = np.random.uniform(
                 low=scipy.special.logit(pred_clipping),
                 high=scipy.special.logit(1 - pred_clipping))
+
+        if isinstance(learning_rate, float):
+            self.learning_rate = ConstantParameter(learning_rate,
+                                                   'learning_rate')
+        elif isinstance(learning_rate, DynamicParameter):
+            self.learning_rate = learning_rate
+        else:
+            raise ValueError('Invalid learning rate')
+
         for size in self.layer_sizes:
             layer = Linear(size, previous_size, self.input_size,
                            self.context_map_size, self.num_classes,
@@ -270,16 +307,6 @@ class GLN(GLNBase):
                            self.weight_clipping, self.bias, self.context_bias)
             self.layers.append(layer)
             previous_size = size
-
-    def set_learning_rate(self, lr: float):
-        """
-        Set the learning rate for all layers in the model
-
-        Args:
-            lr (0.0 < float < 1.0): Value to set as learning rate
-        """
-        for layer in self.layers:
-            layer.set_learning_rate(lr)
 
     def predict(self,
                 input: np.ndarray,
@@ -299,6 +326,8 @@ class GLN(GLNBase):
             Predicted class per input instance (bool, or int if num_classes given),
             or classification probabilities if return_probs set.
         """
+        if input.ndim == 1:
+            input = np.expand_dims(input, axis=0)
 
         # Base predictions
         base_preds = self.base_predictor(input)
@@ -309,8 +338,11 @@ class GLN(GLNBase):
 
         # Target
         if target is not None:
-            target = label_binarize(target,
-                                    classes=list(range(self.num_classes)))
+            if self.num_classes == 1:
+                target = target.reshape(-1, 1).astype(np.int)
+            else:
+                target = label_binarize(target,
+                                        classes=list(range(self.num_classes)))
 
         # Base logits
         base_preds = np.clip(base_preds,

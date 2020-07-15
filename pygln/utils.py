@@ -70,6 +70,7 @@ def evaluate_mnist(model,
                    deskewed=True,
                    batch_size=1,
                    num_epochs=1,
+                   mnist_class=None,
                    data_transform=None,
                    result_transform=None):
     from tqdm import tqdm
@@ -79,6 +80,10 @@ def evaluate_mnist(model,
     # randomly shuffle data
     X_train, y_train = shuffle_data(X_train, y_train)
     X_test, y_test = shuffle_data(X_test, y_test)
+
+    if mnist_class is not None:
+        y_train = (y_train == mnist_class).astype(np.int)
+        y_test = (y_test == mnist_class).astype(np.int)
 
     if data_transform:
         X_train = data_transform(X_train)
@@ -90,9 +95,6 @@ def evaluate_mnist(model,
     for e in range(num_epochs):
         num_batches = int(np.ceil(len(X_train) / batch_size))
         for i in tqdm(range(num_batches)):
-            # set learning rate, following paper
-            model.set_learning_rate(min(100 / (i + 1), max_learning_rate))
-
             # get batch
             batch_start = i * batch_size
             batch_end = batch_start + batch_size

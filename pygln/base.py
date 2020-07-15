@@ -5,9 +5,11 @@ from typing import Callable, Optional, Sequence
 
 class OnlineUpdateModel(ABC):
     """Base class for online-update models, shared by all backend implementations."""
-
     @abstractmethod
-    def predict(self, input: np.ndarray, target: np.ndarray = None, return_probs: bool = False):
+    def predict(self,
+                input: np.ndarray,
+                target: np.ndarray = None,
+                return_probs: bool = False):
         """
         Predict the class for the given inputs, and optionally update the weights.
 
@@ -43,13 +45,13 @@ class GLNBase(OnlineUpdateModel):
         bias (bool): Whether to add a bias prediction in each layer.
         context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
     """
-
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
                  num_classes: Optional[int] = None,
-                 base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                 base_predictor: Optional[
+                     Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: float = 1e-4,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
@@ -83,7 +85,8 @@ class GLNBase(OnlineUpdateModel):
             assert dummy_pred.ndim == 2 and dummy_pred.shape[0] == 1
             self.base_pred_size = dummy_pred.shape[1]
 
-        assert learning_rate > 0.0
+        if isinstance(learning_rate, float):
+            assert learning_rate > 0.0
         self.learning_rate = learning_rate
 
         assert 0.0 < pred_clipping < 1.0
