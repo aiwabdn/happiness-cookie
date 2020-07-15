@@ -1,5 +1,5 @@
 import numpy as np
-import scipy
+from scipy.special import logit as slogit
 from typing import Callable, Optional, Sequence, Union
 from sklearn.preprocessing import label_binarize
 
@@ -13,6 +13,7 @@ def sigmoid(X: np.ndarray):
 class DynamicParameter():
     def __init__(self, name: Optional[str] = None):
         self.step = 0
+        self.name = name
 
     @property
     def value(self):
@@ -33,6 +34,9 @@ class ConstantParameter(DynamicParameter):
 
 
 class PaperLearningRate(DynamicParameter):
+    def __init__(self):
+        DynamicParameter.__init__('paper_learning_rate')
+
     @property
     def value(self):
         return min(100 / super().value, 0.01)
@@ -79,9 +83,8 @@ class Neuron():
         if output_logits.ndim > 1:
             output_logits = output_logits.diagonal()
 
-        output_logits = np.clip(output_logits,
-                                scipy.special.logit(self._output_clipping),
-                                scipy.special.logit(1 - self._output_clipping))
+        output_logits = np.clip(output_logits, slogit(self._output_clipping),
+                                slogit(1 - self._output_clipping))
 
         if targets is not None:
             sigmoids = sigmoid(output_logits)
@@ -115,9 +118,8 @@ class CustomLinear():
                        pred_clipping, weight_clipping, learning_rate)
                 for _ in range(max(1, size - 1))
             ]
-            self._bias = np.random.uniform(
-                scipy.special.logit(pred_clipping),
-                scipy.special.logit(1 - pred_clipping))
+            self._bias = np.random.uniform(slogit(pred_clipping),
+                                           slogit(1 - pred_clipping))
         else:
             self._neurons = [
                 Neuron(input_size, context_size, context_map_size,
@@ -169,10 +171,9 @@ class Linear():
         self.weight_clipping = weight_clipping
 
         if bias and size > 1:
-            self.bias = np.random.uniform(
-                low=scipy.special.logit(self.pred_clipping),
-                high=scipy.special.logit(1 - self.pred_clipping),
-                size=(1, 1, self.num_classes))
+            self.bias = np.random.uniform(low=slogit(self.pred_clipping),
+                                          high=slogit(1 - self.pred_clipping),
+                                          size=(1, 1, self.num_classes))
             self.size = size - 1
         else:
             self.bias = None
@@ -218,8 +219,7 @@ class Linear():
             np.matmul(current_selected_weights,
                       np.expand_dims(logit.T, axis=-3)).diagonal(axis1=-2,
                                                                  axis2=-1),
-            scipy.special.logit(self.pred_clipping),
-            scipy.special.logit(1 - self.pred_clipping)).T
+            slogit(self.pred_clipping), slogit(1 - self.pred_clipping)).T
 
         if target is not None:
             sigmoids = sigmoid(output_logits)
@@ -288,9 +288,8 @@ class GLN(GLNBase):
         self.layers = list()
         previous_size = self.base_pred_size
         if bias:
-            self.base_bias = np.random.uniform(
-                low=scipy.special.logit(pred_clipping),
-                high=scipy.special.logit(1 - pred_clipping))
+            self.base_bias = np.random.uniform(low=slogit(pred_clipping),
+                                               high=slogit(1 - pred_clipping))
 
         if isinstance(learning_rate, float):
             self.learning_rate = ConstantParameter(learning_rate,
@@ -348,7 +347,7 @@ class GLN(GLNBase):
         base_preds = np.clip(base_preds,
                              a_min=self.pred_clipping,
                              a_max=(1.0 - self.pred_clipping))
-        logits = scipy.special.logit(base_preds)
+        logits = slogit(base_preds)
         if self.bias:
             # introduce layer bias
             logits[:, 0] = self.base_bias
