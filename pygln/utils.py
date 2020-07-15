@@ -66,7 +66,6 @@ def shuffle_data(X, y):
 
 
 def evaluate_mnist(model,
-                   max_learning_rate=0.01,
                    deskewed=True,
                    batch_size=1,
                    num_epochs=1,

@@ -40,7 +40,7 @@ class ConstantParameter(DynamicParameter):
 
 class PaperLearningRate(DynamicParameter):
     def __init__(self):
-        DynamicParameter.__init__('paper_learning_rate')
+        DynamicParameter.__init__(self, 'paper_learning_rate')
 
     @property
     def value(self):
