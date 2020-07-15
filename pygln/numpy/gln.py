@@ -279,7 +279,7 @@ class GLN(GLNBase):
                  num_classes: Optional[int] = None,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
-                 learning_rate: Union[DynamicParameter, float] = 1e-2,
+                 learning_rate: Union[DynamicParameter, float] = 1e-4,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,

@@ -216,7 +216,7 @@ class GLN(GLNBase):
                  context_map_size: int = 4,
                  num_classes: Optional[int] = None,
                  base_predictor: Optional[Callable[[ndarray], ndarray]] = None,
-                 learning_rate: float = 1e-2,
+                 learning_rate: float = 1e-4,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,

@@ -5,6 +5,7 @@ Implementations of Gated Linear Networks (GLNs), a new family of neural networks
 - [Installation](#installation)
 - [Usage](#usage)
 - [GLN interface](#gln-interface)
+- [Cite PyGLN](#cite-pygln)
 
 
 
@@ -149,7 +150,7 @@ GLN(backend: str,
     context_map_size: int = 4,
     num_classes: Optional[int] = None,
     base_predictor: Optional[Callable] = None,
-    learning_rate: float = 1e-2,
+    learning_rate: float = 1e-4,
     pred_clipping: float = 1e-3,
     weight_clipping: float = 5.0,
     bias: bool = True,
@@ -198,3 +199,16 @@ Predict the class for the given inputs, and optionally update the weights.
 **Returns:**
 
 - Predicted class per input instance, or classification probabilities if return_probs set.
+
+
+
+## Cite PyGLN
+
+```
+@misc{pygln2020,
+  author       = {Basu, Anindya and Kuhnle, Alexander},
+  title        = {{PyGLN}: {G}ated {L}inear {N}etwork implementations for {NumPy}, {PyTorch}, {TensorFlow} and {JAX}},
+  year         = {2020},
+  url          = {https://github.com/aiwabdn/pygln}
+}
+```
