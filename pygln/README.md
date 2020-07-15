@@ -3,90 +3,142 @@
 
 Python implementations of new family of neural networks from DeepMind's paper on [GLN](https://arxiv.org/pdf/1910.01526.pdf)
 
-## TL;DR
+To install, clone the repository and run
 
-We will look at the NumPy API. The other implementations have the same flow.
+```pip install -e .```
 
-To define a GLN and have it trained on MNIST data.
+We provide a generic wrapper for all four backends.
 
+## Usage
 
-```python
-from gln_numpy import GLN
+A `GLN` model currently acts as a binary classifier by default. For `n` classes, our implementation creates n separate GLNs and trains together in a one-vs-all fashion to create an ensemble.
 
-model = GLN(layer_sizes=[4, 4, 1], input_size=784, context_size=784)
-```
-
-Assuming one batch of random inputs like MNIST data
+To play around with GLN models we have provided some utility function in `pygln.utils` that use the `MNIST` dataset.
 
 
 ```python
+from pygln.utils import get_mnist
 import numpy as np
 
-train_X = np.random.normal(size=(784, 4))
-context_inputs = train_X
-train_Y = np.array([0, 1, 1, 0])
+X_train, y_train, X_test, y_test = get_mnist()
 ```
 
-we can train the GLN (predict and update) in one step with
+Let's first train a binary classifier. We will take class `3` as the target.
 
 
 ```python
-output = model.predict(inputs=train_X, context_inputs=context_inputs, targets=train_Y)
+y_train_3 = (y_train == 3)
+y_test_3 = (y_test == 3)
 ```
 
-To predict with the model, we just omit the `targets` parameter.
+To create a binary GLN classifier
 
 
 ```python
-pred = model.predict(inputs=train_X, context_inputs=context_inputs)
-print(pred)
+from pygln import GLN
+
+model = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=X_train.shape[1], learning_rate=1e-4)
 ```
 
-    [0.13668085 0.92979607 0.91990108 0.10906544]
-
-
-To check that the model is learning, we can pass the same batch a few times to see the outputs get better.
+To train the model with one pass of the data with a batch of 1 sample per iteration
 
 
 ```python
-for i in range(5):
-    output = model.predict(inputs=train_X, context_inputs=context_inputs, targets=train_Y)
-    print('After iteration {}'.format(i+1), output)
+for idx in range(X_train.shape[0]):
+    model.predict(input=X_train[idx], target=y_train_3[idx])
 ```
 
-    After iteration 1 [0.13668085 0.92979607 0.91990108 0.10906544]
-    After iteration 2 [0.1193458  0.93671518 0.92867751 0.09754806]
-    After iteration 3 [0.10552609 0.94249631 0.93583505 0.08790868]
-    After iteration 4 [0.09421555 0.94740545 0.94179999 0.07972696]
-    After iteration 5 [0.08478159 0.95162827 0.94685394 0.07270384]
+One can also use higher batch sizes for training.
 
-
-Some helper functions are provided in `test_mnist`. We can train a model on a particular MNIST class with one pass of the data. 
+To predict with the model, we just omit the `target` parameter.
 
 
 ```python
-from test_mnist import get_mnist_metrics
+preds = []
+for idx in range(X_test.shape[0]):
+    preds.append(model.predict(X_test[idx]))
 
-model = GLN(layer_sizes=[4, 4, 1], input_size=784, context_size=784)
-acc, conf_mat, prfs = get_mnist_metrics(model, batch_size=8, mnist_class=3)
-print()
-print('Accuracy:', acc)
-print('Confusion matrix:\n', conf_mat)
-print('Prec-Rec-F:\n', prfs)
+preds = np.vstack(preds)
 ```
 
-    100%|██████████| 7500/7500 [00:04<00:00, 1658.96it/s]
-    100%|██████████| 1250/1250 [00:00<00:00, 4915.80it/s]
-    
-    Accuracy: 97.81
-    Confusion matrix:
-            not_3  is_3
-    not_3   8945    45
-    is_3     174   836
-    Prec-Rec-F:
-                      not_3         is_3
-    precision     0.980919     0.948922
-    recall        0.994994     0.827723
-    fscore        0.987907     0.884188
-    support    8990.000000  1010.000000
+Now we can check the accuracy of the trained model
+
+
+```python
+from sklearn.metrics import accuracy_score
+
+accuracy_score(y_test_3, preds)
+```
+
+
+
+
+    0.9861
+
+
+
+As we can see, the accuracy is quite high, given that we only made one pass through the data.
+
+To train a model over the whole `MNIST` dataset, we create a `GLN` model with 10 classes. This creates 10 separate `GLN` binary classifiers, trains them together in a one-vs-all fashion and ensembles them for the output.
+
+
+```python
+mnist_model = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=X_train.shape[1], num_classes=10, learning_rate=1e-4)
+
+for idx in range(X_train.shape[0]):
+    mnist_model.predict(input=X_train[idx], target=[y_train[idx]])
+
+preds = []
+for idx in range(X_test.shape[0]):
+    preds.append(mnist_model.predict(X_test[idx]))
+accuracy_score(y_test, np.vstack(preds))
+```
+
+
+
+
+    0.9409
+
+
+
+We have provided `utils.evaluate` to do these tests for the `MNIST` dataset. To train a GLN as a binary classifier for a particular class
+
+
+```python
+from pygln.utils import evaluate_mnist
+
+mnist_model = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=784, learning_rate=1e-4)
+evaluate_mnist(mnist_model, mnist_class=3, batch_size=4)
+```
+
+    100%|██████████| 15000/15000 [00:10<00:00, 1366.94it/s]
+    100%|██████████| 2500/2500 [00:01<00:00, 2195.59it/s]
+
+
+
+
+
+    98.69
+
+
+
+and to train on all classes
+
+
+```python
+from pygln.utils import evaluate_mnist
+
+mnist_model = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=784, num_classes=10, learning_rate=1e-4)
+evaluate_mnist(mnist_model, batch_size=4)
+```
+
+    100%|██████████| 15000/15000 [00:35<00:00, 418.21it/s]
+    100%|██████████| 2500/2500 [00:03<00:00, 764.10it/s]
+
+
+
+
+
+    94.69
+
 
