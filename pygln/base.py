@@ -9,7 +9,7 @@ class OnlineUpdateModel(ABC):
     def predict(self,
                 input: np.ndarray,
                 target: np.ndarray = None,
-                return_probs: bool = False):
+                return_probs: bool = False) -> np.ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.
 
@@ -52,7 +52,7 @@ class GLNBase(OnlineUpdateModel):
                  num_classes: Optional[int] = None,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
-                 learning_rate: float = 1e-4,
+                 learning_rate: float = 1e-2,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,

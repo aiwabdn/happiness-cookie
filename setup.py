@@ -21,7 +21,7 @@ setup(
     author='Anindya Basu, Alexander Kuhnle',
     author_email='???',
     url='https://github.com/aiwabdn/pygln',
-    packages=find_packages(),
+    packages=find_packages(exclude=('test',)),
     license='???',
     python_requires='>=3.5',
     install_requires=install_requires

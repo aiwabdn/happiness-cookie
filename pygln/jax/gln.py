@@ -216,7 +216,7 @@ class GLN(GLNBase):
                  context_map_size: int = 4,
                  num_classes: Optional[int] = None,
                  base_predictor: Optional[Callable[[ndarray], ndarray]] = None,
-                 learning_rate: float = 1e-4,
+                 learning_rate: float = 1e-2,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
                  bias: bool = True,
@@ -267,7 +267,8 @@ class GLN(GLNBase):
         # JAX-compiled update function
         self._jax_update = jax.jit(fun=self._predict, static_argnums=(3,))
 
-    def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False):
+    def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False) \
+            -> ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.
 
