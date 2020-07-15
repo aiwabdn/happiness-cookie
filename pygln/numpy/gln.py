@@ -198,9 +198,6 @@ class Linear():
                                        2**context_map_size, input_size),
                                 fill_value=1 / input_size)
 
-    def set_learning_rate(self, lr):
-        self.learning_rate = lr
-
     def predict(self, logit, context, target=None):
         distances = np.matmul(self._context_maps, context.T)
         mapped_context_binary = (distances > self._context_bias).astype(np.int)
@@ -224,20 +221,28 @@ class Linear():
         if target is not None:
             sigmoids = sigmoid(output_logits)
             diff = sigmoids - np.expand_dims(target, axis=1)
-            update_value = self.learning_rate.value * np.expand_dims(
+            updates = self.learning_rate.value * np.expand_dims(
                 diff, axis=-1) * np.expand_dims(np.swapaxes(logit, -1, -2),
                                                 axis=1)
 
-            np.add.at(
-                self._weights,
-                (np.arange(self.num_classes).reshape(
-                    -1, 1, 1, 1), np.arange(self.size).reshape(1, -1, 1, 1),
-                 np.expand_dims(current_context_indices, axis=-1)),
-                -np.expand_dims(np.transpose(update_value,
-                                             np.array([2, 1, 0, 3])),
-                                axis=-2))
-            self._weights = np.clip(self._weights, -self.weight_clipping,
-                                    self.weight_clipping)
+            updated_weights = current_selected_weights - np.transpose(
+                updates, (2, 1, 0, 3))
+            self._weights[np.arange(self.num_classes).reshape(-1, 1, 1),
+                          np.arange(self.size).reshape(1, -1, 1),
+                          current_context_indices, :] = np.clip(
+                              updated_weights, -self.weight_clipping,
+                              self.weight_clipping)
+
+            # np.add.at(
+            #     self._weights,
+            #     (np.arange(self.num_classes).reshape(
+            #         -1, 1, 1, 1), np.arange(self.size).reshape(1, -1, 1, 1),
+            #      np.expand_dims(current_context_indices, axis=-1)),
+            #     -np.expand_dims(np.transpose(update_value,
+            #                                  np.array([2, 1, 0, 3])),
+            #                     axis=-2))
+            # self._weights = np.clip(self._weights, -self.weight_clipping,
+            #                         self.weight_clipping)
 
         if self.bias is not None:
             output_logits = np.concatenate([

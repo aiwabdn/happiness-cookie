@@ -118,9 +118,6 @@ class Linear(nn.Module):
                                                 dtype=torch.float32),
                                      requires_grad=False)
 
-    def set_learning_rate(self, lr):
-        self.learning_rate = lr
-
     def predict(self, logit, context, target=None):
         # project side information and determine context index
         distances = torch.matmul(self._context_maps, context.T)
@@ -150,16 +147,12 @@ class Linear(nn.Module):
             diff = sigmoids - torch.unsqueeze(target, dim=1)
             update_values = self.learning_rate.value * torch.unsqueeze(
                 diff, dim=-1) * torch.unsqueeze(logit.permute(0, 2, 1), dim=1)
-            self._weights[
-                torch.arange(self.num_classes).reshape(-1, 1, 1),
-                torch.arange(self.size).
-                reshape(1, -1, 1), current_context_indices, :] = torch.clamp(
-                    self.
-                    _weights[torch.arange(self.num_classes).reshape(-1, 1, 1),
-                             torch.arange(self.size).
-                             reshape(1, -1, 1), current_context_indices, :] -
-                    update_values.permute(2, 1, 0, 3), -self.weight_clipping,
-                    self.weight_clipping)
+            self._weights[torch.arange(self.num_classes).reshape(-1, 1, 1),
+                          torch.arange(self.size).reshape(1, -1, 1),
+                          current_context_indices, :] = torch.clamp(
+                              current_selected_weights -
+                              update_values.permute(2, 1, 0, 3),
+                              -self.weight_clipping, self.weight_clipping)
 
         if self.bias is not None:
             bias_append = torch.cat([self.bias] * output_logits.shape[0],
@@ -226,7 +219,7 @@ class GLN(nn.Module, GLNBase):
         if bias:
             self.base_bias = np.random.uniform(low=slogit(pred_clipping),
                                                high=slogit(1 - pred_clipping))
-        for idx, size in enumerate(self.layer_sizes):
+        for size in self.layer_sizes:
             layer = Linear(size, previous_size, self.input_size,
                            self.context_map_size, self.num_classes,
                            self.learning_rate, self.pred_clipping,
@@ -264,7 +257,7 @@ class GLN(nn.Module, GLNBase):
         # Target
         if target is not None:
             if self.num_classes == 1:
-                target = target.reshape(-1, 1).int()
+                target = target.reshape(-1, 1).long()
             else:
                 target = nn.functional.one_hot(target.long(), self.num_classes)
 
@@ -277,7 +270,7 @@ class GLN(nn.Module, GLNBase):
             logits[:, 0] = self.base_bias
 
         # Layers
-        for n, layer in enumerate(self.layers):
+        for layer in self.layers:
             logits = layer.predict(logit=logits,
                                    context=context,
                                    target=target)
