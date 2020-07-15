@@ -7,7 +7,8 @@ Implementations of Gated Linear Networks (GLNs), a new family of neural networks
 - [GLN interface](#gln-interface)
 
 
-### Installation
+
+## Installation
 
 To use `pygln`, simply clone the repository and install the package:
 
@@ -18,7 +19,8 @@ pip install -e .
 ```
 
 
-### Usage
+
+## Usage
 
 To get started, we provide some utility functions in `pygln.utils`, for instance, to obtain the MNIST dataset:
 
@@ -104,7 +106,7 @@ accuracy_score(y_test, np.vstack(preds))
 
     0.9409
 
-We provide `utils.evaluate` to run experiments for the `MNIST` dataset. For instance, to train a GLN as a binary classifier for a particular digit:
+We provide `utils.evaluate` to run experiments for the MNIST dataset. For instance, to train a GLN as a binary classifier for a particular digit:
 
 ```python
 from pygln.utils import evaluate_mnist
@@ -135,7 +137,10 @@ print(evaluate_mnist(model, batch_size=4))
     94.69
 
 
-### GLN Interface
+
+## GLN Interface
+
+### Constructor
 
 ```python
 GLN(backend: str,
@@ -170,6 +175,9 @@ Gated Linear Network constructor.
 - **bias** (*bool*): Whether to add a bias prediction in each layer.
 - **context\_bias** (*bool*): Whether to use a random non-zero bias for context halfspace gating.
 
+---
+
+### Predict
 
 ```python
 GLN.predict(input: np.ndarray,
