@@ -62,7 +62,7 @@ class Linear(OnlineUpdateModule):
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert num_classes >= 1
+        assert num_classes >= 2
 
         self.size = size
         self.context_map_size = context_map_size
@@ -200,12 +200,11 @@ class GLN(tf.Module, GLNBase):
         bias (bool): Whether to add a bias prediction in each layer.
         context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
     """
-
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
-                 num_classes: Optional[int] = None,
+                 num_classes: int = 2,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: float = 1e-4,
@@ -300,18 +299,17 @@ class GLN(tf.Module, GLNBase):
 
         else:
             # Target
-            if self.num_classes == 1:
-                target = tf.convert_to_tensor(target, dtype=self.target_dtype)
-            else:
-                target = tf.convert_to_tensor(target, dtype=self.target_dtype)
+            target = tf.convert_to_tensor(target, dtype=self.target_dtype)
 
             # Predict with update
-            logits = self._tf_update(base_preds=base_preds, context=context, target=target)
+            logits = self._tf_update(base_preds=base_preds,
+                                     context=context,
+                                     target=target)
 
         if return_probs:
             return scipy.special.expit(logits)
-        elif self.num_classes == 1:
-            return np.squeeze(logits, axis=-1) > 0.0
+        elif self.num_classes == 2:
+            return logits[:, 1] > 0.0
         else:
             return np.argmax(logits, axis=1)
 
@@ -327,10 +325,7 @@ class GLN(tf.Module, GLNBase):
 
         # Turn target class into one-hot
         if target is not None:
-            if self.num_classes == 1:
-                target = tf.expand_dims(tf.where(target, 1.0, 0.0), axis=1)
-            else:
-                target = tf.one_hot(target, depth=self.num_classes)
+            target = tf.one_hot(target, depth=self.num_classes)
 
         # Layers
         for layer in self.layers:
