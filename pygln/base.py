@@ -49,9 +49,8 @@ class GLNBase(OnlineUpdateModel):
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
-                 num_classes: Optional[int] = None,
-                 base_predictor: Optional[
-                     Callable[[np.ndarray], np.ndarray]] = None,
+                 num_classes: int = 2,
+                 base_predictor: Optional[Callable] = None,
                  learning_rate: float = 1e-4,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0,
@@ -68,11 +67,8 @@ class GLNBase(OnlineUpdateModel):
         assert context_map_size >= 2
         self.context_map_size = context_map_size
 
-        if num_classes is None:
-            self.num_classes = 1
-        else:
-            assert num_classes >= 2
-            self.num_classes = num_classes
+        assert num_classes >= 2
+        self.num_classes = num_classes
 
         if base_predictor is None:
             self.base_predictor = (lambda x: x)

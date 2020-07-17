@@ -161,7 +161,7 @@ class Linear():
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert num_classes >= 1
+        assert num_classes >= 2
 
         self.num_classes = num_classes
         self.learning_rate = learning_rate
@@ -276,7 +276,7 @@ class GLN(GLNBase):
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
-                 num_classes: Optional[int] = None,
+                 num_classes: int = 2,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: Union[DynamicParameter, float] = 1e-4,
@@ -342,11 +342,8 @@ class GLN(GLNBase):
 
         # Target
         if target is not None:
-            if self.num_classes == 1:
-                target = target.reshape(-1, 1).astype(np.int)
-            else:
-                target = label_binarize(target,
-                                        classes=list(range(self.num_classes)))
+            target = label_binarize(target,
+                                    classes=list(range(self.num_classes)))
 
         # Base logits
         base_preds = np.clip(base_preds,
@@ -366,7 +363,8 @@ class GLN(GLNBase):
         logits = np.squeeze(logits, axis=1)
         if return_probs:
             return sigmoid(logits)
-        elif self.num_classes == 1:
+        elif self.num_classes == 2:
+            logits = logits[:, 1]
             return logits > 0
         else:
             return np.argmax(logits, axis=1)
