@@ -65,7 +65,7 @@ class Linear(OnlineUpdateModule):
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert num_classes >= 1
+        assert num_classes >= 2
 
         self.size = size
         self.input_size = input_size
@@ -209,12 +209,11 @@ class GLN(GLNBase):
         context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
         seed (int): Random seed.
     """
-
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
-                 num_classes: Optional[int] = None,
+                 num_classes: int = 2,
                  base_predictor: Optional[Callable[[ndarray], ndarray]] = None,
                  learning_rate: float = 1e-4,
                  pred_clipping: float = 1e-3,
@@ -262,10 +261,10 @@ class GLN(GLNBase):
             previous_size = size
 
         # JAX-compiled predict function
-        self._jax_predict = jax.jit(fun=self._predict, static_argnums=(3,))
+        self._jax_predict = jax.jit(fun=self._predict, static_argnums=(3, ))
 
         # JAX-compiled update function
-        self._jax_update = jax.jit(fun=self._predict, static_argnums=(3,))
+        self._jax_update = jax.jit(fun=self._predict, static_argnums=(3, ))
 
     def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False) \
             -> ndarray:
@@ -293,7 +292,8 @@ class GLN(GLNBase):
 
         if target is None:
             # Predict without update
-            prediction = self._jax_predict(self.params, base_preds, context, return_probs)
+            prediction = self._jax_predict(self.params, base_preds, context,
+                                           return_probs)
 
         else:
             # Target
@@ -303,9 +303,11 @@ class GLN(GLNBase):
                 target = jnp.asarray(target, dtype=int)
 
             # Predict with update
-            self.params, prediction = self._jax_update(
-                self.params, base_preds, input, return_probs, target=target
-            )
+            self.params, prediction = self._jax_update(self.params,
+                                                       base_preds,
+                                                       input,
+                                                       return_probs,
+                                                       target=target)
 
         return prediction
 
@@ -343,8 +345,8 @@ class GLN(GLNBase):
         # Output prediction
         if return_probs:
             prediction = jnn.sigmoid(logits)
-        elif self.num_classes == 1:
-            prediction = jnp.squeeze(logits, axis=-1) > 0.0
+        elif self.num_classes == 2:
+            prediction = logits[:, 1] > 0.0
         else:
             prediction = jnp.argmax(logits, axis=1)
 
