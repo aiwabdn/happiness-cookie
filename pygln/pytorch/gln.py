@@ -63,7 +63,7 @@ class Linear(nn.Module):
 
         assert size > 0 and input_size > 0 and context_size > 0
         assert context_map_size >= 2
-        assert num_classes >= 1
+        assert num_classes >= 2
 
         self.num_classes = num_classes
         self.learning_rate = learning_rate
@@ -190,7 +190,7 @@ class GLN(nn.Module, GLNBase):
                  layer_sizes: Sequence[int],
                  input_size: int,
                  context_map_size: int = 4,
-                 num_classes: int = None,
+                 num_classes: int = 2,
                  base_predictor: Optional[
                      Callable[[torch.Tensor], torch.Tensor]] = None,
                  learning_rate: Union[DynamicParameter, float] = 1e-4,
@@ -256,10 +256,7 @@ class GLN(nn.Module, GLNBase):
 
         # Target
         if target is not None:
-            if self.num_classes == 1:
-                target = target.reshape(-1, 1).long()
-            else:
-                target = nn.functional.one_hot(target.long(), self.num_classes)
+            target = nn.functional.one_hot(target.long(), self.num_classes)
 
         # Base logits
         base_preds = torch.clamp(base_preds,
@@ -279,6 +276,7 @@ class GLN(nn.Module, GLNBase):
         if return_probs:
             return torch.sigmoid(logits)
         elif self.num_classes == 1:
+            logits = logits[:, 1]
             return logits > 0
         else:
             return torch.argmax(logits, dim=1)
