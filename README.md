@@ -82,7 +82,7 @@ As accuracy for the trained model we get:
 import numpy as np
 from sklearn.metrics import accuracy_score
 
-accuracy_score(y_test_3, np.vstack(preds))
+accuracy_score(y_test_3, np.concatenate(preds, axis=0))
 ```
 
     0.9861

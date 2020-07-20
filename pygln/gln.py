@@ -5,7 +5,7 @@ def GLN(backend: str,
         layer_sizes: Sequence[int],
         input_size: int,
         context_map_size: int = 4,
-        num_classes: Optional[int] = None,
+        num_classes: int = 2,
         base_predictor: Optional[Callable] = None,
         learning_rate: float = 1e-4,
         pred_clipping: float = 1e-3,
@@ -20,7 +20,7 @@ def GLN(backend: str,
         layer_sizes (list[int >= 1]): List of layer output sizes.
         input_size (int >= 1): Input vector size.
         context_map_size (int >= 1): Context dimension, i.e. number of context halfspaces.
-        num_classes (int >= 2): If given, turns GLN into a multi-class classifier by internally
+        num_classes (int >= 2): For values >2, turns GLN into a multi-class classifier by internally
             creating a one-vs-all binary GLN classifier per class and return the argmax as output.
         base_predictor (np.array[N] -> np.array[K]): If given, maps the N-dim input vector to a
             corresponding K-dim vector of base predictions (could be a constant prior), instead of

@@ -197,7 +197,7 @@ class GLN(GLNBase):
         layer_sizes (list[int >= 1]): List of layer output sizes.
         input_size (int >= 1): Input vector size.
         context_map_size (int >= 1): Context dimension, i.e. number of context halfspaces.
-        num_classes (int >= 2): If given, turns GLN into a multi-class classifier by internally
+        num_classes (int >= 2): For values >2, turns GLN into a multi-class classifier by internally
             creating N one-vs-all binary GLN classifiers and return the argmax as output class.
         base_predictor (np.array[n] -> np.array[k]): If given, maps the n-dim input vector to a
             corresponding k-dim vector of base predictions (could be a constant prior), instead of
