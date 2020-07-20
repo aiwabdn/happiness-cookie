@@ -165,8 +165,9 @@ Gated Linear Network constructor.
 - **layer\_sizes** (*list[int >= 1]*): List of layer output sizes.
 - **input\_size** (*int >= 1*): Input vector size.
 - **context\_map\_size** (*int >= 1*): Context dimension, i.e. number of context halfspaces.
-- **num\_classes** (*int >= 2*): If given, turns GLN into a multi-class classifier by internally
-    creating a one-vs-all binary GLN classifier per class and return the argmax as output.
+- **num\_classes** (*int >= 2*): For values >2, turns GLN into a multi-class classifier by
+    internally creating a one-vs-all binary GLN classifier per class and return the argmax as
+    output.
 - **base\_predictor** (*np.array[N] -> np.array[K]*): If given, maps the N-dim input vector to a
     corresponding K-dim vector of base predictions (could be a constant prior), instead of
     simply using the clipped input vector itself.
