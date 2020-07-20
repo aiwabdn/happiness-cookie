@@ -297,7 +297,7 @@ class GLN(GLNBase):
 
         else:
             # Target
-            if self.num_classes == 1:
+            if self.num_classes == 2:
                 target = jnp.asarray(target, dtype=bool)
             else:
                 target = jnp.asarray(target, dtype=int)
