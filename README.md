@@ -43,8 +43,7 @@ We provide a generic wrapper around all four backend implementations. Here, we u
 ```python
 from pygln import GLN
 
-model_3 = GLN(backend='numpy', layer_sizes=[4, 4, 1],
-              input_size=X_train.shape[1], learning_rate=1e-4)
+model_3 = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=X_train.shape[1])
 ```
 
 Alternatively, the various implementations can be imported directly via their respective submodule:
@@ -52,8 +51,7 @@ Alternatively, the various implementations can be imported directly via their re
 ```python
 from pygln.numpy import GLN
 
-model_3 = GLN(layer_sizes=[4, 4, 1], input_size=X_train.shape[1],
-              learning_rate=1e-4)
+model_3 = GLN(layer_sizes=[4, 4, 1], input_size=X_train.shape[1])
 ```
 
 Next we train the model for one epoch on the dataset:
@@ -65,12 +63,14 @@ for n in range(X_train.shape[0]):
 
 Note that GLNs are updated in an online unbatched fashion, so simply by passing each instance and corresponding binary target to `model.predict()`. To speed up training, it can make sense to use small batch sizes (~10).
 
-Finally, to use the model for prediction on unknown instances, we just omit the `target` parameter -- this time the batch version:
+Finally, to use the model for prediction on unknown instances, we just omit the `target` parameter -- this time the batched version:
 
 ```python
+import numpy as np
+
 preds = []
 batch_size = 100
-for n in range(X_test.shape[0] // batch_size):
+for n in range(np.ceil(X_test.shape[0] / batch_size).astype(int)):
     batch = X_test[n * batch_size: (n + 1) * batch_size]
     pred = model_3.predict(batch)
     preds.append(pred)
@@ -89,11 +89,11 @@ accuracy_score(y_test_3, np.concatenate(preds, axis=0))
 
 As can be seen, the accuracy is already quite high, despite the fact that we only did one pass through the data.
 
-To train a classifier for the entire MNIST dataset, we create a `GLN` model with 10 classes. If the `num_classes` argument is provided, our implementations implicitly create the according number of separate binary GLNs and train them simultaneously in a one-vs-all fashion:
+To train a classifier for the entire MNIST dataset, we create a `GLN` model with 10 classes. If `num_classes` provided is greater than `2`, our implementations implicitly create the same number of separate binary GLNs and train them simultaneously in a one-vs-all fashion:
 
 ```python
 model = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=X_train.shape[1],
-            num_classes=10, learning_rate=1e-4)
+            num_classes=10)
 
 for n in range(X_train.shape[0]):
     model.predict(input=X_train[n:n+1], target=y_train[n:n+1])
@@ -107,13 +107,12 @@ accuracy_score(y_test, np.vstack(preds))
 
     0.9409
 
-We provide `utils.evaluate` to run experiments for the MNIST dataset. For instance, to train a GLN as a binary classifier for a particular digit:
+We provide `utils.evaluate` to run experiments on the MNIST dataset. For instance, to train a GLN as a binary classifier for a particular digit with batches of 4:
 
 ```python
 from pygln.utils import evaluate_mnist
 
-model_3 = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=784,
-              learning_rate=1e-4)
+model_3 = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=784)
 
 print(evaluate_mnist(model_3, mnist_class=3, batch_size=4))
 ```
@@ -127,7 +126,7 @@ And to train on all classes:
 
 ```python
 model = GLN(backend='numpy', layer_sizes=[4, 4, 1], input_size=784,
-            num_classes=10, learning_rate=1e-4)
+            num_classes=10)
 
 print(evaluate_mnist(model, batch_size=4))
 ```
