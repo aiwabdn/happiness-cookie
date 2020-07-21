@@ -146,8 +146,9 @@ class Linear(OnlineUpdateModule):
 
         weights = tf.gather_nd(self.weights, indices=context_index)
 
-        bias = tf.tile(self.bias, multiples=(batch_size, 1, 1))
-        logits = tf.concat([logits, bias], axis=-1)
+        if self.bias is not None:
+            bias = tf.tile(self.bias, multiples=(batch_size, 1, 1))
+            logits = tf.concat([logits, bias], axis=-1)
         logits = tf.expand_dims(logits, axis=-1)
 
         output_logits = tf.linalg.matmul(weights, logits)

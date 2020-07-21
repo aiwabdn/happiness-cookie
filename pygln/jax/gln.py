@@ -145,8 +145,9 @@ class Linear(OnlineUpdateModule):
                              slice_sizes=(1, 1, 1,
                                           self.input_size + int(self.bias)))
 
-        bias = jnp.tile(params['bias'], reps=(batch_size, 1, 1))
-        logits = jnp.concatenate([logits, bias], axis=-1)
+        if self.bias:
+            bias = jnp.tile(params['bias'], reps=(batch_size, 1, 1))
+            logits = jnp.concatenate([logits, bias], axis=-1)
         logits = jnp.expand_dims(logits, axis=-1)
 
         output_logits = jnp.matmul(weights, logits)
