@@ -66,7 +66,7 @@ class Linear(OnlineUpdateModule):
 
         self.size = size
         self.context_map_size = context_map_size
-        self.num_classes = num_classes
+        self.num_classes = num_classes if num_classes > 2 else 1
 
         logits_size = input_size + int(bias)
         num_context_indices = 1 << self.context_map_size
@@ -255,10 +255,7 @@ class GLN(tf.Module, GLNBase):
             autograph=False)
 
         # TF-compiled update function
-        if self.num_classes == 1:
-            self.target_dtype = tf.dtypes.bool
-        else:
-            self.target_dtype = tf.dtypes.int64
+        self.target_dtype = tf.dtypes.int64
         self._tf_update = tf.function(
             func=self._predict,
             input_signature=[
@@ -310,7 +307,7 @@ class GLN(tf.Module, GLNBase):
         if return_probs:
             return scipy.special.expit(logits)
         elif self.num_classes == 2:
-            return logits[:, 1] > 0.0
+            return logits > 0.0
         else:
             return np.argmax(logits, axis=1)
 
@@ -322,11 +319,15 @@ class GLN(tf.Module, GLNBase):
                                                       self.pred_clipping))
         logits = tf.math.log(base_preds / (1.0 - base_preds))
         logits = tf.expand_dims(logits, axis=1)
-        logits = tf.tile(logits, multiples=(1, self.num_classes, 1))
+        logits = tf.tile(
+            logits,
+            multiples=(1, self.num_classes if self.num_classes > 2 else 1, 1))
 
         # Turn target class into one-hot
         if target is not None:
             target = tf.one_hot(target, depth=self.num_classes)
+            if self.num_classes == 2:
+                target = tf.reshape(target[:, 1], (-1, 1))
 
         # Layers
         for layer in self.layers:

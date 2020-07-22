@@ -163,7 +163,7 @@ class Linear():
         assert context_map_size >= 2
         assert num_classes >= 2
 
-        self.num_classes = num_classes
+        self.num_classes = num_classes if num_classes > 2 else 1
         self.learning_rate = learning_rate
         # clipping value for predictions
         self.pred_clipping = pred_clipping
@@ -364,7 +364,6 @@ class GLN(GLNBase):
         if return_probs:
             return sigmoid(logits)
         elif self.num_classes == 2:
-            logits = logits[:, 1]
             return logits > 0
         else:
             return np.argmax(logits, axis=1)

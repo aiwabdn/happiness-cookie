@@ -65,7 +65,7 @@ class Linear(nn.Module):
         assert context_map_size >= 2
         assert num_classes >= 2
 
-        self.num_classes = num_classes
+        self.num_classes = num_classes if num_classes > 2 else 1
         self.learning_rate = learning_rate
         # clipping value for predictions
         self.pred_clipping = pred_clipping
@@ -257,6 +257,8 @@ class GLN(nn.Module, GLNBase):
         # Target
         if target is not None:
             target = nn.functional.one_hot(target.long(), self.num_classes)
+            if self.num_classes == 2:
+                target = target[:, 1].reshape(-1, 1)
 
         # Base logits
         base_preds = torch.clamp(base_preds,
@@ -275,8 +277,7 @@ class GLN(nn.Module, GLNBase):
         logits = torch.squeeze(logits, dim=1)
         if return_probs:
             return torch.sigmoid(logits)
-        elif self.num_classes == 1:
-            logits = logits[:, 1]
+        elif self.num_classes == 2:
             return logits > 0
         else:
             return torch.argmax(logits, dim=1)

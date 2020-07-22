@@ -71,7 +71,7 @@ class Linear(OnlineUpdateModule):
         self.input_size = input_size
         self.context_size = context_size
         self.context_map_size = context_map_size
-        self.num_classes = num_classes
+        self.num_classes = num_classes if num_classes > 2 else 1
         self.bias = bias
         self.context_bias = context_bias
 
@@ -297,11 +297,7 @@ class GLN(GLNBase):
                                            return_probs)
 
         else:
-            # Target
-            if self.num_classes == 2:
-                target = jnp.asarray(target, dtype=bool)
-            else:
-                target = jnp.asarray(target, dtype=int)
+            target = jnp.asarray(target, dtype=int)
 
             # Predict with update
             self.params, prediction = self._jax_update(self.params,
@@ -319,14 +315,16 @@ class GLN(GLNBase):
                               a_max=(1.0 - self.pred_clipping))
         logits = jsp.special.logit(base_preds)
         logits = jnp.expand_dims(logits, axis=1)
-        logits = jnp.tile(logits, reps=(1, self.num_classes, 1))
+        if self.num_classes == 2:
+            logits = jnp.tile(logits, reps=(1, 1, 1))
+        else:
+            logits = jnp.tile(logits, reps=(1, self.num_classes, 1))
 
         # Turn target class into one-hot
         if target is not None:
-            if self.num_classes == 1:
-                target = jnp.expand_dims(jnp.where(target, 1.0, 0.0), axis=1)
-            else:
-                target = jnn.one_hot(target, num_classes=self.num_classes)
+            target = jnn.one_hot(target, num_classes=self.num_classes)
+            if self.num_classes == 2:
+                target = target[:, 1].reshape(-1, 1)
 
         # Layers
         if target is None:
@@ -347,7 +345,7 @@ class GLN(GLNBase):
         if return_probs:
             prediction = jnn.sigmoid(logits)
         elif self.num_classes == 2:
-            prediction = logits[:, 1] > 0.0
+            prediction = logits > 0.0
         else:
             prediction = jnp.argmax(logits, axis=1)
 
