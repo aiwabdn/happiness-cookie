@@ -205,8 +205,8 @@ Predict the class for the given inputs, and optionally update the weights.
 
 We attempted to replicate the results of the paper on MNIST. The paper does not specify the model architecture exactly. With the `tf` model we achieved `~96%` accuracy on all 10 classes in MNIST. We present the results from some of our experiments here. We welcome results from other experiments.
 
-- ~[Varying the width of a 2-layer GLN](_images/varying-width.png?raw=true)
-- ~[Varying the depth of a GLN](_images/varying-depth.png?raw=true)
+- ![Varying the width of a 2-layer GLN](_images/varying-width.png?raw=true)
+- ![Varying the depth of a GLN](_images/varying-depth.png?raw=true)
 
 ## Cite PyGLN
 
