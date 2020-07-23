@@ -5,6 +5,7 @@ Implementations of Gated Linear Networks (GLNs), a new family of neural networks
 - [Installation](#installation)
 - [Usage](#usage)
 - [GLN interface](#gln-interface)
+- [Results](#results)
 - [Cite PyGLN](#cite-pygln)
 
 
@@ -200,7 +201,12 @@ Predict the class for the given inputs, and optionally update the weights.
 
 - Predicted class per input instance, or classification probabilities if return_probs set.
 
+## Results
 
+We attempted to replicate the results of the paper on MNIST. The paper does not specify the model architecture exactly. With the `tf` model we achieved `~96%` accuracy on all 10 classes in MNIST. We present the results from some of our experiments here. We welcome results from other experiments.
+
+- ~[Varying the width of a 2-layer GLN](_images/varying-width.png?raw=true)
+- ~[Varying the depth of a GLN](_images/varying-depth.png?raw=true)
 
 ## Cite PyGLN
 
