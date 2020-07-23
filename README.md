@@ -208,9 +208,12 @@ We attempted to replicate the results of the paper on MNIST. The paper does not 
 - Varying the **depth and width** of GLNs
 
     ![](_images/varying-depth-width.png)
-- Varying other parameters of a GLN
+- Varying **weight_clipping, pred_clipping, context_map_size** of a GLN
 
-    ![](_images/other-params.png)
+    ![](_images/weight-pred-context-clip.png)
+- Switching **base predictor functions, layer bias and context bias** of a GLN
+
+    ![](_images/base-bias-context.png)
 
 ## Cite PyGLN
 
