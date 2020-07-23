@@ -2,6 +2,8 @@
 
 Implementations of Gated Linear Networks (GLNs), a new family of neural networks introduced by DeepMind in a recent [paper](https://arxiv.org/pdf/1910.01526.pdf), using various frameworks: NumPy, PyTorch, TensorFlow and JAX.
 
+Published under `GNU GPLv3` license.
+
 - [Installation](#installation)
 - [Usage](#usage)
 - [GLN interface](#gln-interface)
