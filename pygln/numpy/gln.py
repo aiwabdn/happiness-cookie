@@ -225,24 +225,15 @@ class Linear():
                 diff, axis=-1) * np.expand_dims(np.swapaxes(logit, -1, -2),
                                                 axis=1)
 
-            updated_weights = current_selected_weights - np.transpose(
-                updates, (2, 1, 0, 3))
-            self._weights[np.arange(self.num_classes).reshape(-1, 1, 1),
-                          np.arange(self.size).reshape(1, -1, 1),
-                          current_context_indices, :] = np.clip(
-                              updated_weights, -self.weight_clipping,
-                              self.weight_clipping)
-
-            # np.add.at(
-            #     self._weights,
-            #     (np.arange(self.num_classes).reshape(
-            #         -1, 1, 1, 1), np.arange(self.size).reshape(1, -1, 1, 1),
-            #      np.expand_dims(current_context_indices, axis=-1)),
-            #     -np.expand_dims(np.transpose(update_value,
-            #                                  np.array([2, 1, 0, 3])),
-            #                     axis=-2))
-            # self._weights = np.clip(self._weights, -self.weight_clipping,
-            #                         self.weight_clipping)
+            np.add.at(
+                self._weights,
+                (np.arange(self.num_classes).reshape(
+                    -1, 1, 1, 1), np.arange(self.size).reshape(1, -1, 1, 1),
+                 np.expand_dims(current_context_indices, axis=-1)),
+                -np.expand_dims(np.transpose(updates, np.array([2, 1, 0, 3])),
+                                axis=-2))
+            self._weights = np.clip(self._weights, -self.weight_clipping,
+                                    self.weight_clipping)
 
         if self.bias is not None:
             output_logits = np.concatenate([
