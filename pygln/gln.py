@@ -35,11 +35,11 @@ def GLN(backend: str,
 
     if backend == 'jax':
         from pygln.jax import GLN
-    elif backend == 'numpy':
+    elif backend == 'numpy' or backend == 'np':
         from pygln.numpy import GLN
-    elif backend == 'pytorch':
+    elif backend == 'pytorch' or backend == 'torch':
         from pygln.pytorch import GLN
-    elif backend == 'tf':
+    elif backend == 'tensorflow' or backend == 'tf':
         from pygln.tf import GLN
     else:
         raise NotImplementedError(f"No implementation for backend {backend}.")
