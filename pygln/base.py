@@ -5,6 +5,7 @@ from typing import Callable, Optional, Sequence
 
 class OnlineUpdateModel(ABC):
     """Base class for online-update models, shared by all backend implementations."""
+
     @abstractmethod
     def predict(self,
                 input: np.ndarray,
@@ -33,29 +34,29 @@ class GLNBase(OnlineUpdateModel):
     Args:
         layer_sizes (list[int >= 1]): List of layer output sizes.
         input_size (int >= 1): Input vector size.
-        context_map_size (int >= 1): Context dimension, i.e. number of context halfspaces.
         num_classes (int >= 2): For values >2, turns GLN into a multi-class classifier by internally
-            creating N one-vs-all binary GLN classifiers and return the argmax as output class.
-        base_predictor (np.array[n] -> np.array[k]): If given, maps the n-dim input vector to a
-            corresponding k-dim vector of base predictions (could be a constant prior), instead of
+            creating a one-vs-all binary GLN classifier per class and return the argmax as output.
+        context_map_size (int >= 1): Context dimension, i.e. number of context halfspaces.
+        bias (bool): Whether to add a bias prediction in each layer.
+        context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
+        base_predictor (np.array[N] -> np.array[K]): If given, maps the N-dim input vector to a
+            corresponding K-dim vector of base predictions (could be a constant prior), instead of
             simply using the clipped input vector itself.
         learning_rate (float > 0.0): Update learning rate.
         pred_clipping (0.0 < float < 0.5): Clip predictions into [p, 1 - p] at each layer.
         weight_clipping (float > 0.0): Clip weights into [-w, w] after each update.
-        bias (bool): Whether to add a bias prediction in each layer.
-        context_bias (bool): Whether to use a random non-zero bias for context halfspace gating.
     """
     def __init__(self,
                  layer_sizes: Sequence[int],
                  input_size: int,
-                 context_map_size: int = 4,
                  num_classes: int = 2,
-                 base_predictor: Optional[Callable] = None,
+                 context_map_size: int = 4,
+                 bias: bool = True,
+                 context_bias: bool = True,
+                 base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: float = 1e-4,
                  pred_clipping: float = 1e-3,
-                 weight_clipping: float = 5.0,
-                 bias: bool = True,
-                 context_bias: bool = True):
+                 weight_clipping: float = 5.0):
         super().__init__()
 
         assert len(layer_sizes) > 0 and layer_sizes[-1] == 1
@@ -64,14 +65,21 @@ class GLNBase(OnlineUpdateModel):
         assert input_size > 0
         self.input_size = input_size
 
-        assert context_map_size >= 2
-        self.context_map_size = context_map_size
-
         assert num_classes >= 2
         self.num_classes = num_classes
 
+        assert context_map_size >= 1
+        self.context_map_size = context_map_size
+
+        self.bias = bias
+
+        self.context_bias = context_bias
+
         if base_predictor is None:
-            self.base_predictor = (lambda x: x)
+            self.base_predictor = (
+                lambda x: (x - x.min(axis=1, keepdims=True)) /
+                (x.max(axis=1, keepdims=True) - x.min(axis=1, keepdims=True))
+            )
             self.base_pred_size = self.input_size
         else:
             self.base_predictor = base_predictor
@@ -88,8 +96,5 @@ class GLNBase(OnlineUpdateModel):
         assert 0.0 < pred_clipping < 1.0
         self.pred_clipping = pred_clipping
 
-        assert weight_clipping >= 1.0
+        assert weight_clipping > 0.0
         self.weight_clipping = weight_clipping
-
-        self.bias = bias
-        self.context_bias = context_bias

@@ -130,3 +130,6 @@ dmypy.json
 
 # MNIST data
 /data/
+
+# Local scripts and files
+/_*
