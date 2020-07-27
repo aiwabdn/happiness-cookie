@@ -17,6 +17,7 @@ def result_transform(X: torch.Tensor):
 
 class DynamicParameter(nn.Module):
     def __init__(self, name: Optional[str] = None):
+        super().__init__()
         self.step = 0
         self.name = name
 
@@ -28,7 +29,7 @@ class DynamicParameter(nn.Module):
 
 class ConstantParameter(DynamicParameter):
     def __init__(self, constant_value: float, name: Optional[str] = None):
-        DynamicParameter.__init__(self, name)
+        super().__init__(name)
 
         assert isinstance(constant_value, float)
         self.constant_value = constant_value
@@ -251,6 +252,23 @@ class GLN(nn.Module, GLNBase):
         # Base predictions
         base_preds = self.base_predictor(input)
 
+        # Default data transform
+        if isinstance(input, np.ndarray):
+            if not next(self.parameters()).is_cuda:
+                self.cuda()
+            input = torch.tensor(input, dtype=torch.float32)
+            base_preds = torch.tensor(base_preds, dtype=torch.float32)
+            if target is not None:
+                target = torch.tensor(target)
+            if torch.cuda.is_available():
+                input = input.cuda()
+                base_preds = base_preds.cuda()
+                if target is not None:
+                    target = target.cuda()
+            require_transform = True
+        else:
+            require_transform = False
+
         # Context
         context = input
 
@@ -276,11 +294,16 @@ class GLN(nn.Module, GLNBase):
 
         logits = torch.squeeze(logits, dim=1)
         if return_probs:
-            return torch.sigmoid(logits)
+            output = torch.sigmoid(logits)
         elif self.num_classes == 2:
-            return logits > 0
+            output = logits > 0
         else:
-            return torch.argmax(logits, dim=1)
+            output = torch.argmax(logits, dim=1)
+
+        if require_transform:
+            return output.cpu().numpy()
+        else:
+            return output
 
     def extra_repr(self):
         return 'num_classes={}, num_layers={}'.format(self.num_classes,
