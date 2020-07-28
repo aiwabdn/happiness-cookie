@@ -65,7 +65,7 @@ class Linear(OnlineUpdateModule):
         super().__init__(learning_rate, pred_clipping, weight_clipping)
 
         assert size > 0 and input_size > 0 and context_size > 0
-        assert context_map_size >= 2
+        assert context_map_size >= 1
         assert num_classes >= 2
 
         self.size = size
@@ -263,10 +263,10 @@ class GLN(GLNBase):
             previous_size = size
 
         # JAX-compiled predict function
-        self._jax_predict = jax.jit(fun=self._predict, static_argnums=(3, ))
+        self._jax_predict = jax.jit(fun=self._predict, static_argnums=(3,))
 
         # JAX-compiled update function
-        self._jax_update = jax.jit(fun=self._predict, static_argnums=(3, ))
+        self._jax_update = jax.jit(fun=self._predict, static_argnums=(3,))
 
     def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False) \
             -> ndarray:
@@ -325,7 +325,7 @@ class GLN(GLNBase):
         if target is not None:
             target = jnn.one_hot(target, num_classes=self.num_classes)
             if self.num_classes == 2:
-                target = target[:, 1].reshape(-1, 1)
+                target = target[:, 1:]
 
         # Layers
         if target is None:
@@ -340,7 +340,10 @@ class GLN(GLNBase):
                     logits=logits,
                     context=context,
                     target=target)
+
         logits = jnp.squeeze(logits, axis=-1)
+        if self.num_classes == 2:
+            logits = jnp.squeeze(logits, axis=1)
 
         # Output prediction
         if return_probs:

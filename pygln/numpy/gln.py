@@ -160,7 +160,7 @@ class Linear():
         super().__init__()
 
         assert size > 0 and input_size > 0 and context_size > 0
-        assert context_map_size >= 2
+        assert context_map_size >= 1
         assert num_classes >= 2
 
         self.num_classes = num_classes if num_classes > 2 else 1
@@ -351,6 +351,9 @@ class GLN(GLNBase):
                                    target=target)
 
         logits = np.squeeze(logits, axis=1)
+        if self.num_classes == 2:
+            logits = np.squeeze(logits, axis=1)
+
         if return_probs:
             return sigmoid(logits)
         elif self.num_classes == 2:

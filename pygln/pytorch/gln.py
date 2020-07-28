@@ -63,7 +63,7 @@ class Linear(nn.Module):
         super().__init__()
 
         assert size > 0 and input_size > 0 and context_size > 0
-        assert context_map_size >= 2
+        assert context_map_size >= 1
         assert num_classes >= 2
 
         self.num_classes = num_classes if num_classes > 2 else 1
@@ -275,7 +275,7 @@ class GLN(nn.Module, GLNBase):
         if target is not None:
             target = nn.functional.one_hot(target.long(), self.num_classes)
             if self.num_classes == 2:
-                target = target[:, 1].reshape(-1, 1)
+                target = target[:, 1:]
 
         # Base logits
         base_preds = torch.clamp(base_preds,
@@ -292,6 +292,9 @@ class GLN(nn.Module, GLNBase):
                                    target=target)
 
         logits = torch.squeeze(logits, dim=1)
+        if self.num_classes == 2:
+            logits = logits.squeeze(dim=1)
+
         if return_probs:
             output = torch.sigmoid(logits)
         elif self.num_classes == 2:

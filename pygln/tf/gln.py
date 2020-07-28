@@ -61,7 +61,7 @@ class Linear(OnlineUpdateModule):
         super().__init__(learning_rate, pred_clipping, weight_clipping)
 
         assert size > 0 and input_size > 0 and context_size > 0
-        assert context_map_size >= 2
+        assert context_map_size >= 1
         assert num_classes >= 2
 
         self.size = size
@@ -303,6 +303,9 @@ class GLN(tf.Module, GLNBase):
                                      context=context,
                                      target=target)
 
+        if self.num_classes == 2:
+            logits = np.squeeze(logits, axis=1)
+
         if return_probs:
             return scipy.special.expit(logits)
         elif self.num_classes == 2:
@@ -324,13 +327,14 @@ class GLN(tf.Module, GLNBase):
 
         # Turn target class into one-hot
         if target is not None:
-            target = tf.one_hot(target, depth=self.num_classes)
+            target = tf.one_hot(target, depth=self.num_classes, axis=1)
             if self.num_classes == 2:
-                target = tf.reshape(target[:, 1], (-1, 1))
+                target = target[:, 1:]
 
         # Layers
         for layer in self.layers:
             logits = layer.predict(logits=logits,
                                    context=context,
                                    target=target)
+
         return tf.squeeze(logits, axis=-1)
