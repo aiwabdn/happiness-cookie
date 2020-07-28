@@ -7,14 +7,6 @@ from typing import Callable, Optional, Sequence, Union
 from ..base import GLNBase
 
 
-def data_transform(X: np.ndarray):
-    return torch.Tensor(X)
-
-
-def result_transform(X: torch.Tensor):
-    return X.cpu().numpy()
-
-
 class DynamicParameter(nn.Module):
     def __init__(self, name: Optional[str] = None):
         super().__init__()
@@ -194,7 +186,8 @@ class GLN(nn.Module, GLNBase):
                  context_map_size: int = 4,
                  bias: bool = True,
                  context_bias: bool = True,
-                 base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                 base_predictor: Optional[
+                     Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: Union[float, DynamicParameter] = 1e-4,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0):
@@ -228,8 +221,8 @@ class GLN(nn.Module, GLNBase):
             previous_size = size
 
     def predict(self,
-                input: torch.Tensor,
-                target: torch.Tensor = None,
+                input: Union[np.ndarray, torch.Tensor],
+                target: Union[np.ndarray, torch.Tensor] = None,
                 return_probs: bool = False) -> torch.Tensor:
         """
         Predict the class for the given inputs, and optionally update the weights.
@@ -253,13 +246,11 @@ class GLN(nn.Module, GLNBase):
 
         # Default data transform
         if isinstance(input, np.ndarray):
-            if not next(self.parameters()).is_cuda:
-                self.cuda()
             input = torch.tensor(input, dtype=torch.float32)
             base_preds = torch.tensor(base_preds, dtype=torch.float32)
             if target is not None:
                 target = torch.tensor(target)
-            if torch.cuda.is_available():
+            if next(self.parameters()).is_cuda:
                 input = input.cuda()
                 base_preds = base_preds.cuda()
                 if target is not None:
