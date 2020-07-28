@@ -250,7 +250,9 @@ class GLN(nn.Module, GLNBase):
             base_preds = torch.tensor(base_preds, dtype=torch.float32)
             if target is not None:
                 target = torch.tensor(target)
-            if next(self.parameters()).is_cuda:
+            if torch.cuda.is_available():
+                if not next(self.parameters()).is_cuda:
+                    self.cuda()
                 input = input.cuda()
                 base_preds = base_preds.cuda()
                 if target is not None:
