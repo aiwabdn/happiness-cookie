@@ -9,7 +9,7 @@ class OnlineUpdateModel(ABC):
     @abstractmethod
     def predict(self,
                 input: np.ndarray,
-                target: np.ndarray = None,
+                target: Optional[np.ndarray] = None,
                 return_probs: bool = False) -> np.ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.
@@ -83,7 +83,7 @@ class GLNBase(OnlineUpdateModel):
             self.base_pred_size = self.input_size
         else:
             self.base_predictor = base_predictor
-            dummy_input = np.zeros(shape=(1, input_size))
+            dummy_input = np.zeros(shape=(1, self.input_size))
             dummy_pred = self.base_predictor(dummy_input)
             assert dummy_pred.dtype in (np.float32, np.float64)
             assert dummy_pred.ndim == 2 and dummy_pred.shape[0] == 1

@@ -304,7 +304,7 @@ class GLN(GLNBase):
 
     def predict(self,
                 input: np.ndarray,
-                target: np.ndarray = None,
+                target: Optional[np.ndarray] = None,
                 return_probs: bool = False) -> np.ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.

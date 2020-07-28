@@ -266,8 +266,9 @@ class GLN(tf.Module, GLNBase):
             ],
             autograph=False)
 
-    def predict(self, input: np.ndarray, target: np.ndarray = None, return_probs: bool = False) \
-            -> np.ndarray:
+    def predict(
+      self, input: np.ndarray, target: Optional[np.ndarray] = None, return_probs: bool = False
+    ) -> np.ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.
 

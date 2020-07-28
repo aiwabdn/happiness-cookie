@@ -220,9 +220,12 @@ class GLN(nn.Module, GLNBase):
             self.layers.append(layer)
             previous_size = size
 
+        if torch.cuda.is_available():
+            self.cuda()
+
     def predict(self,
-                input: Union[np.ndarray, torch.Tensor],
-                target: Union[np.ndarray, torch.Tensor] = None,
+                input: np.ndarray,
+                target: Optional[np.ndarray] = None,
                 return_probs: bool = False) -> torch.Tensor:
         """
         Predict the class for the given inputs, and optionally update the weights.
@@ -245,21 +248,15 @@ class GLN(nn.Module, GLNBase):
         base_preds = self.base_predictor(input)
 
         # Default data transform
-        if isinstance(input, np.ndarray):
-            input = torch.tensor(input, dtype=torch.float32)
-            base_preds = torch.tensor(base_preds, dtype=torch.float32)
+        input = torch.tensor(input, dtype=torch.float32)
+        base_preds = torch.tensor(base_preds, dtype=torch.float32)
+        if target is not None:
+            target = torch.tensor(target)
+        if torch.cuda.is_available():
+            input = input.cuda()
+            base_preds = base_preds.cuda()
             if target is not None:
-                target = torch.tensor(target)
-            if torch.cuda.is_available():
-                if not next(self.parameters()).is_cuda:
-                    self.cuda()
-                input = input.cuda()
-                base_preds = base_preds.cuda()
-                if target is not None:
-                    target = target.cuda()
-            require_transform = True
-        else:
-            require_transform = False
+                target = target.cuda()
 
         # Context
         context = input
@@ -295,10 +292,9 @@ class GLN(nn.Module, GLNBase):
         else:
             output = torch.argmax(logits, dim=1)
 
-        if require_transform:
-            return output.cpu().numpy()
-        else:
-            return output
+        if torch.cuda.is_available():
+            output = output.cpu()
+        return output.numpy()
 
     def extra_repr(self):
         return 'num_classes={}, num_layers={}'.format(self.num_classes,

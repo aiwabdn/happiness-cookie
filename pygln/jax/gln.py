@@ -268,8 +268,9 @@ class GLN(GLNBase):
         # JAX-compiled update function
         self._jax_update = jax.jit(fun=self._predict, static_argnums=(3,))
 
-    def predict(self, input: ndarray, target: ndarray = None, return_probs: bool = False) \
-            -> ndarray:
+    def predict(
+        self, input: ndarray, target: Optional[ndarray] = None, return_probs: bool = False
+    ) -> ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.
 
