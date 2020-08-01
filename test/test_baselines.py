@@ -4,12 +4,12 @@ import unittest
 from pygln import baselines, utils
 
 
-class TestReadme(unittest.TestCase):
+class TestBaselines(unittest.TestCase):
 
     def test_mlp(self):
         X_train, y_train, X_test, y_test = utils.get_mnist()
 
-        model = baselines.MLP(layer_sizes=[4, 4, 1], input_size=X_train.shape[1], num_classes=10)
+        model = baselines.MLP(layer_sizes=[4, 4], input_size=X_train.shape[1], num_classes=10)
 
         output = model.predict(X_train[:1])
         self.assertEqual(output.dtype, y_test.dtype)

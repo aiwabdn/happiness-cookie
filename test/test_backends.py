@@ -11,7 +11,7 @@ class TestBackends(unittest.TestCase):
         y_train = (y_train == 0)
         y_test = (y_test == 0)
 
-        model = GLN(backend=backend, layer_sizes=[4, 4, 1], input_size=X_train.shape[1])
+        model = GLN(backend=backend, layer_sizes=[4, 4], input_size=X_train.shape[1])
 
         output = model.predict(X_train[:1])
         self.assertEqual(output.dtype, y_test.dtype)
@@ -29,7 +29,7 @@ class TestBackends(unittest.TestCase):
         X_train, y_train, X_test, y_test = utils.get_mnist()
 
         model = GLN(
-            backend=backend, layer_sizes=[4, 4, 1], input_size=X_train.shape[1], num_classes=10
+            backend=backend, layer_sizes=[4, 4], input_size=X_train.shape[1], num_classes=10
         )
 
         output = model.predict(X_train[:1])

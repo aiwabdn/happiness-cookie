@@ -26,10 +26,7 @@ class MLP(torch.nn.Module):
         if torch.cuda.is_available():
             self.cuda()
 
-    def predict(self,
-                input: np.ndarray,
-                target: Optional[np.ndarray] = None) -> np.ndarray:
-
+    def predict(self, input: np.ndarray, target: Optional[np.ndarray] = None) -> np.ndarray:
         input = torch.tensor(input, dtype=torch.float32)
         if target is not None:
             target = torch.tensor(target)
@@ -38,10 +35,12 @@ class MLP(torch.nn.Module):
             if target is not None:
                 target = target.cuda()
 
+        # Prediction
         for layer in self.layers:
             input = layer(input)
         output = input.argmax(dim=1)
 
+        # Update
         if target is not None:
             self.optimizer.zero_grad()
             loss = self.loss(input, target)
