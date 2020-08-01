@@ -4,7 +4,7 @@ import unittest
 from pygln import GLN, utils
 
 
-class TestReadme(unittest.TestCase):
+class TestBackends(unittest.TestCase):
 
     def _test_binary(self, backend):
         X_train, y_train, X_test, y_test = utils.get_mnist()

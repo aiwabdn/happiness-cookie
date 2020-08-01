@@ -226,7 +226,7 @@ class GLN(nn.Module, GLNBase):
     def predict(self,
                 input: np.ndarray,
                 target: Optional[np.ndarray] = None,
-                return_probs: bool = False) -> torch.Tensor:
+                return_probs: bool = False) -> np.ndarray:
         """
         Predict the class for the given inputs, and optionally update the weights.
 
