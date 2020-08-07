@@ -187,7 +187,8 @@ class GLN(tf.Module, GLNBase):
     TensorFlow implementation of Gated Linear Networks (https://arxiv.org/abs/1910.01526).
 
     Args:
-        layer_sizes (list[int >= 1]): List of layer output sizes.
+        layer_sizes (list[int >= 1]): List of layer output sizes, excluding last classification
+            layer which is added implicitly.
         input_size (int >= 1): Input vector size.
         num_classes (int >= 2): For values >2, turns GLN into a multi-class classifier by internally
             creating a one-vs-all binary GLN classifier per class and return the argmax as output.
@@ -209,7 +210,7 @@ class GLN(tf.Module, GLNBase):
                  bias: bool = True,
                  context_bias: bool = True,
                  base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-                 learning_rate: Union[float, DynamicParameter] = 1e-4,
+                 learning_rate: Union[float, DynamicParameter] = 1e-3,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0):
 
@@ -228,7 +229,7 @@ class GLN(tf.Module, GLNBase):
         # Initialize layers
         self.layers = list()
         previous_size = self.base_pred_size
-        for size in self.layer_sizes:
+        for size in (self.layer_sizes + (1,)):
             self.layers.append(
                 Linear(size=size,
                        input_size=previous_size,

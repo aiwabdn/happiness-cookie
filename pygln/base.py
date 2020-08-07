@@ -32,7 +32,8 @@ class GLNBase(OnlineUpdateModel):
     Base class for Gated Linear Network implementations (https://arxiv.org/abs/1910.01526).
 
     Args:
-        layer_sizes (list[int >= 1]): List of layer output sizes.
+        layer_sizes (list[int >= 1]): List of layer output sizes, excluding last classification
+            layer which is added implicitly.
         input_size (int >= 1): Input vector size.
         num_classes (int >= 2): For values >2, turns GLN into a multi-class classifier by internally
             creating a one-vs-all binary GLN classifier per class and return the argmax as output.
@@ -54,26 +55,26 @@ class GLNBase(OnlineUpdateModel):
                  bias: bool = True,
                  context_bias: bool = True,
                  base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-                 learning_rate: float = 1e-4,
+                 learning_rate: float = 1e-3,
                  pred_clipping: float = 1e-3,
                  weight_clipping: float = 5.0):
         super().__init__()
 
-        assert len(layer_sizes) > 0 and layer_sizes[-1] == 1
+        assert len(layer_sizes) > 0 and all(size > 0 for size in layer_sizes)
         self.layer_sizes = tuple(layer_sizes)
 
         assert input_size > 0
-        self.input_size = input_size
+        self.input_size = int(input_size)
 
         assert num_classes >= 2
-        self.num_classes = num_classes
+        self.num_classes = int(num_classes)
 
         assert context_map_size >= 1
-        self.context_map_size = context_map_size
+        self.context_map_size = int(context_map_size)
 
-        self.bias = bias
+        self.bias = bool(bias)
 
-        self.context_bias = context_bias
+        self.context_bias = bool(context_bias)
 
         if base_predictor is None:
             self.base_predictor = (
@@ -89,12 +90,11 @@ class GLNBase(OnlineUpdateModel):
             assert dummy_pred.ndim == 2 and dummy_pred.shape[0] == 1
             self.base_pred_size = dummy_pred.shape[1]
 
-        if isinstance(learning_rate, float):
-            assert learning_rate > 0.0
+        assert not isinstance(learning_rate, float) or learning_rate > 0.0
         self.learning_rate = learning_rate
 
         assert 0.0 < pred_clipping < 1.0
-        self.pred_clipping = pred_clipping
+        self.pred_clipping = float(pred_clipping)
 
         assert weight_clipping > 0.0
-        self.weight_clipping = weight_clipping
+        self.weight_clipping = float(weight_clipping)
