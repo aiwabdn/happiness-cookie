@@ -60,7 +60,7 @@ class GLNBase(OnlineUpdateModel):
                  weight_clipping: float = 5.0):
         super().__init__()
 
-        assert len(layer_sizes) > 0 and all(size > 0 for size in layer_sizes)
+        assert all(size > 0 for size in layer_sizes)
         self.layer_sizes = tuple(layer_sizes)
 
         assert input_size > 0

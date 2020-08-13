@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from typing import Callable, Optional, Sequence, Union
+from typing import Optional, Sequence
 
 
 class MLP(torch.nn.Module):
@@ -9,7 +9,7 @@ class MLP(torch.nn.Module):
                  layer_sizes: Sequence[int],
                  input_size: int,
                  num_classes: int = 2,
-                 learning_rate: float = 1e-3):
+                 learning_rate: float = 2.5e-4):
         super().__init__()
 
         self.layers = torch.nn.ModuleList()

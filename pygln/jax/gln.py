@@ -8,7 +8,6 @@ from ..base import GLNBase
 
 
 jax.config.update("jax_debug_nans", True)
-jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_numpy_rank_promotion", "raise")
 
 
@@ -289,10 +288,10 @@ class GLN(GLNBase):
 
         # Base predictions
         base_preds = self.base_predictor(input)
-        base_preds = jnp.asarray(base_preds, dtype=float)
+        base_preds = jnp.asarray(base_preds, dtype=jnp.float32)
 
         # Context
-        context = jnp.asarray(input, dtype=float)
+        context = jnp.asarray(input, dtype=jnp.float32)
 
         if target is None:
             # Predict without update
@@ -300,7 +299,7 @@ class GLN(GLNBase):
                                            return_probs)
 
         else:
-            target = jnp.asarray(target, dtype=int)
+            target = jnp.asarray(target, dtype=jnp.int32)
 
             # Predict with update
             self.params, prediction = self._jax_update(self.params,
