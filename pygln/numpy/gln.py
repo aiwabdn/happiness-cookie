@@ -155,8 +155,8 @@ class Linear():
                  learning_rate: DynamicParameter,
                  pred_clipping: float,
                  weight_clipping: float,
-                 bias: bool = True,
-                 context_bias: bool = True):
+                 bias: bool,
+                 context_bias: bool):
         super().__init__()
 
         assert size > 0 and input_size > 0 and context_size > 0
@@ -270,7 +270,7 @@ class GLN(GLNBase):
                  num_classes: int = 2,
                  context_map_size: int = 4,
                  bias: bool = True,
-                 context_bias: bool = True,
+                 context_bias: bool = False,
                  base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: Union[float, DynamicParameter] = 1e-3,
                  pred_clipping: float = 1e-3,

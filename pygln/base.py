@@ -53,7 +53,7 @@ class GLNBase(OnlineUpdateModel):
                  num_classes: int = 2,
                  context_map_size: int = 4,
                  bias: bool = True,
-                 context_bias: bool = True,
+                 context_bias: bool = False,
                  base_predictor: Optional[Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: float = 1e-3,
                  pred_clipping: float = 1e-3,
@@ -69,7 +69,7 @@ class GLNBase(OnlineUpdateModel):
         assert num_classes >= 2
         self.num_classes = int(num_classes)
 
-        assert context_map_size >= 1
+        assert context_map_size >= 0
         self.context_map_size = int(context_map_size)
 
         self.bias = bool(bias)

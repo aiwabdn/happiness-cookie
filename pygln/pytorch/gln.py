@@ -50,14 +50,15 @@ class Linear(nn.Module):
                  learning_rate: DynamicParameter,
                  pred_clipping: float,
                  weight_clipping: float,
-                 bias: bool = True,
-                 context_bias: bool = True):
+                 bias: bool,
+                 context_bias: bool):
         super().__init__()
 
         assert size > 0 and input_size > 0 and context_size > 0
-        assert context_map_size >= 1
+        assert context_map_size >= 0
         assert num_classes >= 2
 
+        self.context_map_size = context_map_size
         self.num_classes = num_classes if num_classes > 2 else 1
         self.learning_rate = learning_rate
         # clipping value for predictions
@@ -75,13 +76,16 @@ class Linear(nn.Module):
             self.bias = None
             self.size = size
 
-        self._context_maps = torch.as_tensor(
-            np.random.normal(size=(self.num_classes, self.size,
-                                   context_map_size, context_size)),
-            dtype=torch.float32)
+        if context_map_size > 0:
+            self._context_maps = torch.as_tensor(
+                np.random.normal(size=(self.num_classes, self.size,
+                                       context_map_size, context_size)),
+                dtype=torch.float32)
 
         # constant values for halfspace gating
-        if context_bias:
+        if context_map_size == 0:
+            pass
+        elif context_bias:
             context_bias_shape = (self.num_classes, self.size,
                                   context_map_size, 1)
             self._context_bias = torch.tensor(
@@ -93,15 +97,17 @@ class Linear(nn.Module):
             self._context_bias = torch.tensor(0.0)
 
         self.bias = nn.Parameter(self.bias, requires_grad=False)
-        self._context_maps = nn.Parameter(self._context_maps,
-                                          requires_grad=False)
-        self._context_bias = nn.Parameter(self._context_bias,
-                                          requires_grad=False)
 
-        # array to convert mapped_context_binary context to index
-        self._boolean_converter = nn.Parameter(torch.as_tensor(
-            np.array([[2**i] for i in range(context_map_size)])),
-                                               requires_grad=False)
+        if context_map_size > 0:
+            self._context_maps = nn.Parameter(self._context_maps,
+                                              requires_grad=False)
+            self._context_bias = nn.Parameter(self._context_bias,
+                                              requires_grad=False)
+
+            # array to convert mapped_context_binary context to index
+            self._boolean_converter = nn.Parameter(torch.as_tensor(
+                np.array([[2**i] for i in range(context_map_size)])),
+                                                   requires_grad=False)
 
         # weights for the whole layer
         weights_shape = (self.num_classes, self.size, 2**context_map_size,
@@ -112,12 +118,17 @@ class Linear(nn.Module):
                                      requires_grad=False)
 
     def predict(self, logit, context, target=None):
-        # project side information and determine context index
-        distances = torch.matmul(self._context_maps, context.T)
-        mapped_context_binary = (distances > self._context_bias).int()
-        current_context_indices = torch.sum(mapped_context_binary *
-                                            self._boolean_converter,
-                                            dim=-2)
+        if self.context_map_size > 0:
+            # project side information and determine context index
+            distances = torch.matmul(self._context_maps, context.T)
+            mapped_context_binary = (distances > self._context_bias).int()
+            current_context_indices = torch.sum(mapped_context_binary *
+                                                self._boolean_converter,
+                                                dim=-2)
+        else:
+            current_context_indices = torch.zeros(
+                self.num_classes, self.size, 1, dtype=torch.int64
+            )
 
         # select all context across all neurons in layer
         current_selected_weights = self._weights[
@@ -186,7 +197,7 @@ class GLN(nn.Module, GLNBase):
                  num_classes: int = 2,
                  context_map_size: int = 4,
                  bias: bool = True,
-                 context_bias: bool = True,
+                 context_bias: bool = False,
                  base_predictor: Optional[
                      Callable[[np.ndarray], np.ndarray]] = None,
                  learning_rate: Union[float, DynamicParameter] = 1e-3,
