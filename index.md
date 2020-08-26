@@ -1,4 +1,3 @@
-i
 # Gated Linear Networks
 
 This blogpost presents intuition and experimental results for Gated Linear Networks, a new family of neural networks introduced by DeepMind in a [recent paper](https://arxiv.org/pdf/1910.01526.pdf). Accompanying implementations in JAX, NumPy, PyTorch and TensorFlow can be found [here](https://github.com/aiwabdn/pygln).
@@ -40,8 +39,6 @@ In the figure above, the context function consists of $3$ lines, shown in red, g
 Let's see how that might look in code.
 
 
-  <div class="input_area" markdown="1">
-  
 ```python
 import numpy as np
 
@@ -62,18 +59,14 @@ print('region indices in binary: \n', binary_region_indices)
 print('target weight indices determined from context function: \n', weight_indices)
 ```
 
-  </div>
-  
-  {:.output_stream}</p>
+    region indices in binary: 
+     [[0 0 0 1]
+     [1 0 0 0]
+     [1 1 0 1]]
+    target weight indices determined from context function: 
+     [3 1 0 5]
 
-<pre><code>  region indices in binary: 
- [[0 0 0 1]
- [1 0 0 0]
- [1 1 0 1]]
-target weight indices determined from context function: 
- [3 1 0 5]
-</code></pre>
-<p>
+
 ### Geometric Mixing
 
 A neuron takes the probabilistic predictions of the previous layer and combines them using the context-selected weights to produce a prediction of its own. This is implemented as **geometric mixing**, that is, a dot product of the weights and the prediction logits of the previous layer and subsequent sigmoid:
@@ -93,8 +86,6 @@ Conceptually, this implements a kind of voting mechanism:
 As the neuron sees more samples, it learns which of the predictions of the previous layer to pay more attention to. So in a sense a neuron behaves like an expert who, given a certain type of input, learns the best way to combine decisions from other experts to arrive at their own judgement. This also demonstrates the difference between a GLN and a normal neural network. Usually, the neurons of the intermediate layers of a neural network learn to combine "features" from the previous layers to produce a higher order "feature" value. However, the features themselves do not have any (extrinsic) semantic meaning or obvious interpretation. That is also why the weights of intermediate layers can only be updated via backpropagation after the final output has been computed, which has a clear interpretation and thus can be optimized. A neuron in a GLN, on the other hand, is directly predicting the output and can consequently learn immediately from its mistakes.
 
 
-  <div class="input_area" markdown="1">
-  
 ```python
 from scipy import special
 
@@ -104,18 +95,14 @@ output = special.expit(logit) # sigmoid
 output
 ```
 
-  </div>
-  
 
 
 
-  {:.output_data_text}</p>
+    array([[0.61196125],
+           [0.64587557],
+           [0.64513203],
+           [0.61447864]])
 
-<pre><code>  array([[0.61196125],
-       [0.64587557],
-       [0.64513203],
-       [0.61447864]])</code></pre>
-<p>
 
 
 ### Online Convex Programming
