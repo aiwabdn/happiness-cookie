@@ -28,7 +28,7 @@ Imagine an expert who, given an input, is supposed to make a binary decision and
 
 The following awesome stick figure sketch attempts to explain this:
 
-![Panel of experts view](_images/expert2.png)
+![Panel of experts view](assets/images/expert2.png)
 
 We can think of the layers in a GLN as panels of such experts. Each expert/neuron in a layer considers the previous layer as their panel of experts. Consequently, the prediction of the target output gets iteratively refined through the sequence of layers, until a last single-neuron layer makes the final decision which is taken as the network output. Different from typical deep neural networks, however, the output of each neuron is directly interpretable and updated locally, as opposed to globally via backpropagation through the entire network.
 
@@ -42,7 +42,7 @@ We have seen how each neuron has its own **context function** which it uses to c
 
 Let us consider a two-dimensional input space and an input point $$(x_0, y_0)$$. Any straight line divides the space into two halves, and our point lies either to the right (1) or left (0) of the line. So every line gives us a binary value indicating, very roughly, in which region of the input space our point is located.
 
-![](_images/context_function.png)
+![](assets/images/context_function.png)
 
 We can consider the point's position relative to multiple lines and combine the binary results to form a binary string. In general, if we draw $$n$$ lines, we get a binary string of length $$n$$ with $$2^n$$ possible values, i.e., sub-regions. This operation forms the basis of how the **context function** computes context identifiers given an input point. A neuron interprets this binary string as number and uses it as index into an array of $$2^n$$ different set of weights, thus making a *data-dependent choice* of which linear function to apply.
 
@@ -156,13 +156,21 @@ We observe an accuracy of $$96.1\%$$ after a single pass over the training data,
 
 Moreover, evaluating performance over the course of training (up to 50 epochs) shows roughly similar developments for GLN and MLP. On the one hand, this is surprising and intriguing since the optimization mechanisms underlying the two models are quite different. On the other hand, while the paper seems to suggest that GLNs learn quickly (*"...98% accuracy in a single pass of the training data."*), we cannot confirm that they learn substantially faster than a comparable deep learning model. However, we highlight two observations: first, GLNs do indeed exhibit higher performance at the very beginning of training, at around 1\% of the dataset, and second, whereas the MLP plateaus at around 10 epochs, GLN performance actually deteriorates from that point on.
 
-![ablation-epoch](results/epoch.png)
+<div align="center"><img src="assets/images/epoch.png" alt="ablation-epoch" style="width:75%"></div>
+
 
 ### Ablation: architecture size and depth
 
 Next, we investigate how performance varies for different architecture choices. Interestingly, GLNs turn out to be comparatively insensitive to layer size and network depth in two respects.
 
-![ablation-size-depth](results/size_depth.png)
+<div style="display: flex; flex-wrap: wrap;">
+  <div style="flex: 50%;">
+    <img src="assets/images/size.png" alt="ablation-size" style="width:100%">
+  </div>
+  <div style="flex: 50%;">
+    <img src="assets/images/depth.png" alt="ablation-depth" style="width:100%">
+  </div>
+</div>
 
 1. Training of deeper GLNs does not become less stable. This is likely due to the local nature of its update mechanism, which does not rely on backpropagation and hence is not affected by vanishing/exploding gradients. However, it raises the question whether, conversely, GLNs are capable of benefitting from multiple layers. Performance on MNIST does not seem to improve with depth, but a more complex dataset may be necessary to get a clearer picture.
 
@@ -187,12 +195,24 @@ Noteworthy ablation results for the other GLN-specific hyperparameters are:
 | false      | true         | 95.3%    |
 | true       | true         | 95.4%    |
 
-**COMBINE IMAGES !!!**
+<div style="display: flex; flex-wrap: wrap;">
+  <div style="flex: 50%;">
+    <img src="assets/images/context_map_size.png" alt="ablation-context-map-size" style="width:100%">
+  </div>
+  <div style="flex: 50%;">
+    <img src="assets/images/learning_rate.png" alt="ablation-learning-rate" style="width:100%">
+  </div>
+</div>
 
-![ablation-learningrate](results/context_map_size.png)
-![ablation-learningrate](results/learning_rate.png)
-![ablation-learningrate](results/pred_clipping.png)
-![ablation-learningrate](results/weight_clipping.png)
+<div style="display: flex; flex-wrap: wrap;">
+  <div style="flex: 50%;">
+    <img src="assets/images/pred_clipping.png" alt="ablation-pred-clipping" style="width:100%">
+  </div>
+  <div style="flex: 50%;">
+    <img src="assets/images/weight_clipping.png" alt="ablation-weight-clipping" style="width:100%">
+  </div>
+</div>
+
 
 ## Further research
 
