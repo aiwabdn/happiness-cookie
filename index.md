@@ -44,7 +44,7 @@ With that intuition in place, let us look at the main mathematical concepts unde
 
 ### Halfspace gating
 
-We have seen how each neuron has its own **context function** which it uses to choose a decision rule conditioned on the input. Since the neuron should use the same decision rule for similar inputs, the context function should map regions of the input space to the same context. One way to do this is to maintain a memory of representative points and compute a similarity metric to determine which region another point belongs to. Another way, which is used here, is to divide the space into **halfspaces** and compute region membership based on which halfspace an input point belongs to.
+We have seen how each neuron has its own **context function** which it uses to choose a decision rule conditioned on the input. Since the neuron should use the same decision rule for similar inputs, the context function should map regions of the input space to the same context. One way to achieve this is to divide the space into **halfspaces** and compute region membership based on which halfspace an input point belongs to, but other methods, for instance, based on a fixed number of representative points, could be used instead.
 
 Let's consider a two-dimensional input space and an input point $$(x_0, y_0)$$. Any straight line divides the space into two halves, and our point lies either to the left (0) or right (1) of the line. So every line gives us a binary value indicating, very roughly, in which region of the input space our point is located.
 
@@ -141,7 +141,7 @@ print(output)
 
 Now that we know how a neuron chooses weights based on the input, and uses them to mix the outputs of a previous layer of neurons to produce its own output, let's see how it learns to update the weights in training.
 
-Using the standard logarithmic loss, it can be shown that the gradient consists of scaling the difference between the output and the ground truth $$y$$ by the logit of the output probability
+Using the standard logarithmic loss, it can be shown that the gradient consists of scaling the difference between the output and the ground truth $$y$$ by the logit of the output probability:
 
 $$
 \nabla \mathcal{L}^\mathrm{GEO}(w) = \nabla \big( -\log \mathrm{GEO}^y_w(p) \big) = \big( \mathrm{GEO}^1_w(p) - y \big) \cdot \mathrm{logit}(p).
