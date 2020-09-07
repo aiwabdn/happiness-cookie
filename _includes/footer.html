@@ -3,34 +3,27 @@
 
     <div class="wrapper">
 
-        <div class="footer-col-wrapper">
-            <div class="footer-col footer-col-1">
-                <ul class="contact-list">
-                    <li class="p-name">
-                        {%- if site.author1 -%}
-                        {{ site.author1 | escape }}
-                        {%- endif -%}
-                    </li>
-                    {%- if site.email1 -%}
-                    <li><a class="u-email" href="mailto:{{ site.email }}">{{ site.email1 }}</a></li>
-                    {%- endif -%}
-                </ul>
-            </div>
+        <ul class="contact-list">
+            <li class="p-name">
+                {%- if site.author1 -%}
+                {{ site.author1 | escape }}
+                {%- endif -%}
+            </li>
+            {%- if site.email1 -%}
+            <li><a class="u-email" href="mailto:{{ site.email }}">{{ site.email1 }}</a></li>
+            {%- endif -%}
+        </ul>
 
-            <div class="footer-col footer-col-2">
-                <ul class="contact-list">
-                    <li class="p-name">
-                        {%- if site.author2 -%}
-                        {{ site.author2 | escape }}
-                        {%- endif -%}
-                    </li>
-                    {%- if site.email2 -%}
-                    <li><a class="u-email" href="mailto:{{ site.email }}">{{ site.email2 }}</a></li>
-                    {%- endif -%}
-                </ul>
-            </div>
-
-        </div>
+        <ul class="contact-list">
+            <li class="p-name">
+                {%- if site.author2 -%}
+                {{ site.author2 | escape }}
+                {%- endif -%}
+            </li>
+            {%- if site.email2 -%}
+            <li><a class="u-email" href="mailto:{{ site.email }}">{{ site.email2 }}</a></li>
+            {%- endif -%}
+        </ul>
 
     </div>
 

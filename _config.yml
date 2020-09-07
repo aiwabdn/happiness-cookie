@@ -18,7 +18,7 @@
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
 
-# title: Your awesome title
+title: Gated Linear Networks
 author1: Anindya Basu
 email1: aiwabdn@gmail.com
 author2: Alexander Kuhnle
