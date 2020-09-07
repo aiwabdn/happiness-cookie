@@ -153,8 +153,7 @@ So much for theory, let's now move on to our experimental results...
 
 ## Experimental results
 
-We have benchmarked our GLN implementations on MNIST (more precisely, a [deskewed version](https://fsix.github.io/mnist/)), compared performance to a standard multi-layer perceptron (MLP), and performed detailed ablation experiments.
-
+We have benchmarked our GLN implementations on MNIST (more precisely, a [deskewed version](https://fsix.github.io/mnist/)), compared performance to a standard multi-layer perceptron (MLP), and performed detailed ablation experiments. The scripts used for our experiments can be found in the [gln-experiments](https://github.com/aiwabdn/pygln/tree/gln-experiments) branch of the repo.
 
 
 ### Setup and hyperparameters
