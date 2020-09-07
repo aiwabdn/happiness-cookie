@@ -243,7 +243,7 @@ Noteworthy ablation results for the other GLN-specific hyperparameters are:
 
 ## Further research
 
-[Some](https://arxiv.org/abs/2002.11611) [work](https://arxiv.org/abs/2006.05964) in extending GLNs has already been done by the authors of the paper. We will continue investigating the performance gap between our implementation and the results stated in the paper. Other than that, we are thinking about the following extensions to our code in the near future:
+[Some](https://arxiv.org/abs/2002.11611) [work](https://arxiv.org/abs/2006.05964) in extending GLNs has already been done by the authors of the paper. Possible future experiments and extensions include:
 
 1. Benchmark performance on bigger datasets, e.g. CIFAR-10.
 2. Investigate resilience to catastrophic forgetting by training on multiple tasks.
