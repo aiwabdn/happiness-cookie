@@ -30,7 +30,7 @@ Imagine an expert who, given an input, is supposed to make a **binary decision**
 
 The following awesome stick figure sketch attempts to visualize this:
 
-![panel-of-experts](assets/images/expert2.png)
+<div align="center"><img src="assets/images/expert2.png" alt="panel-of-experts" style="width:75%"></div>
 
 We can think of the layers in a GLN as panels of such experts. Each expert/neuron in a layer considers the previous layer as their panel of experts. Consequently, the prediction of the target output gets iteratively refined through the sequence of layers, until a last single-neuron layer makes the final decision, which is taken as the network output. Different from typical deep neural networks, however, the output of each neuron is directly interpretable and updated locally, as opposed to globally via backpropagation through the entire network.
 
@@ -48,7 +48,7 @@ We have seen how each neuron has its own **context function** which it uses to c
 
 Let's consider a two-dimensional input space and an input point $$(x_0, y_0)$$. Any straight line divides the space into two halves, and our point lies either to the left (0) or right (1) of the line. So every line gives us a binary value indicating, very roughly, in which region of the input space our point is located.
 
-![context-function](assets/images/context_function.png)
+<div align="center"><img src="assets/images/context_function.png" alt="context-function" style="width:75%"></div>
 
 We can consider the point's position relative to multiple lines and combine the binary results to form a binary string. In general, if we draw $$n$$ lines, we get a binary string of length $$n$$ with $$2^n$$ possible values, i.e., sub-regions. This operation forms the basis of how the **context function** computes context identifiers given an input point. A neuron interprets this binary string as number and uses it as index into an array of $$2^n$$ different set of weights, thus making a **data-dependent choice** of which linear function to apply.
 
