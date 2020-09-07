@@ -155,7 +155,7 @@ So much for theory, let's now move on to our experimental results...
 
 ## Experimental results
 
-We have benchmarked our GLN implementations on MNIST (more precisely, a [deskewed version](https://fsix.github.io/mnist/)), compared performance to a standard multi-layer perceptron (MLP), and performed detailed ablation experiments. We plan to add results for some of the other datasets and experiments of the original GLN paper (UCI dataset, MNIST density modeling, resilience to catastrophic forgetting) in the future.
+We have benchmarked our GLN implementations on MNIST (more precisely, a [deskewed version](https://fsix.github.io/mnist/)), compared performance to a standard multi-layer perceptron (MLP), and performed detailed ablation experiments.
 
 
 
@@ -177,7 +177,7 @@ We observe an accuracy of $$96.1\%$$ after a single pass over the training data,
 | TensorFlow    | 96.1%    | 339 sec |
 | MLP (PyTorch) | 96.1%    | 48 sec  |
 
-Moreover, evaluating performance over the course of training (up to 50 epochs) shows roughly similar developments for GLN and MLP. On the one hand, this is surprising and intriguing since the optimization mechanisms underlying the two models are quite different. On the other hand, while the paper seems to suggest that GLNs learn quickly (*"...98% accuracy in a single pass of the training data."*), we cannot confirm that they learn substantially faster than a comparable deep learning model. However, we highlight two observations: first, GLNs do indeed exhibit higher performance at the very beginning of training, at around 1\% of the dataset, and second, whereas the MLP plateaus at around 10 epochs, GLN performance actually deteriorates from that point on. More experiments with different hyperparameter choices would be required to confirm this tendency.
+Moreover, evaluating performance over the course of training (up to 50 epochs) shows roughly similar developments for GLN and MLP. On the one hand, this is surprising and intriguing since the optimization mechanisms underlying the two models are quite different. On the other hand, while the paper seems to suggest that GLNs learn quickly (*"...98% accuracy in a single pass of the training data."*), we cannot confirm that they learn substantially faster than a comparable deep learning model. However, we highlight two observations: first, GLNs do indeed exhibit higher performance at the very beginning of training, at around $$1\%$$ of the dataset, and second, whereas the MLP plateaus at around 10 epochs, GLN performance actually deteriorates from that point on. More experiments with different hyperparameter choices would be required to confirm this tendency.
 
 <div align="center"><img src="assets/images/epoch.png" alt="ablation-epoch" style="width:75%"></div>
 
